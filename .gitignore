@@ -1,0 +1,23 @@
+# ROM-derived or generated content: never committed
+*.bin
+*.gen
+*.smd
+generated/
+build/
+*.exe
+*.o
+*.obj
+*.dll
+*.lib
+
+# Saves, captures and game imagery
+*.srm
+*.wav
+*.bmp
+docs/assets/
+
+# editor / OS noise
+.vs/
+.vscode/
+*.user
+Thumbs.db

@@ -1,0 +1,97 @@
+# game.toml — Shadowrun (Sega Genesis / Mega Drive, 1994, US retail).
+# Modeled on the framework's puyo/game.toml (non-Sonic, no in-tree disassembly).
+#
+# ROM identity: 2 MB, header "SHADOWRUN", serial GM MK-1352 -00, region "U",
+# CRC32 FBB92909, SHA-1 A06A281D39E845BFF446A541B2FF48E1D93143C2.
+# Vectors: SSP $00FFFFF8, entry $000236.
+#   H-interrupt (IRQ4) $000228 -> JMP $001080
+#   V-interrupt (IRQ6) $00022E -> JMP $001070
+#   all other vectors $000220 (STOP #$2700 handler)
+
+[game]
+output_prefix = "shadowrun"
+# No annotations/disassembly: rely on the framework's heuristic discovery and
+# let it enumerate PC-relative jump tables.
+jump_table_autodiscovery = true
+# $000BD2: addq.w #1,$FFDF88 / move.w $FFF9F6,d7 / wait for the V-int counter at
+# $FFF9EE to change / store / rts. This is the title's frame-sync helper; the
+# runner replaces it with the normal scheduler yield stub.
+vblank_yield_addr = 0x000BD2
+
+[ram_layout]
+# Cosmetic fields are unknown for this title and left at 0.
+game_mode      = 0x000000
+vint_runcount  = 0x000000
+vint_routine   = 0x000000
+plc_pending    = 0x000000
+# Load-bearing: reset SSP from the vector table.
+initial_ssp    = 0x00FFFFF8
+vbla_stack     = 0x00FFFFF8
+intr_stack     = 0x00FFFFF8
+player_object  = 0x000000
+level_modes    = []
+
+[functions]
+# Entry point plus the real handler entry points, and the pad-reader entries the
+# heuristic walk does not reach (the pad-1 path ends with `bra $19D0`, so the
+# pad-2 routine at $199A is a second entry with no direct BSR/JSR anywhere).
+extra = [
+  0x000236,   # reset entry
+  0x000228,   # H-int vector -> JMP $001080
+  0x00022E,   # V-int vector -> JMP $001070
+  0x001070,   # V-int handler (movem / JSR $001872 / rte)
+  0x001080,   # H-int handler (JSR $001910 / rte)
+  0x00195C,   # pad reader, port 1
+  0x00199A,   # pad reader, port 2 (writes $FFDD24/$FFDD26)
+  0x001A48,   # pad port read helper (bsr target from $199A)
+  0x001D7A,   # called from $1A9E during boot
+  0x000A7B4,  # sprite-system init (initialises $FFDF2C)
+
+  # interior-label dispatch targets observed at run time (frame ~8150): the
+  # game jumps into the middle of these routines via a table of absolute
+  # addresses, so the recompiler never saw them as entries.
+  0x05AE9E,
+  0x00B45C,
+  0x01669A,
+  0x053AB6,
+  0x053B16,
+  0x053B78,
+  0x053BCC,
+  0x053CEA,
+  0x053F8C,
+  0x054076,
+  0x054152,
+  0x054222,
+  0x054322,
+  0x0543A2,
+  0x05447E,
+  0x0545B6,
+  0x0249C4,
+  # UI node actions reached through the script runner's jump table ($C436):
+  # the hotel menu's "Karma Screen" and "Check Out" routines are interior
+  # targets, so their calls landed nowhere and the menu could not act.
+  0x00D024,
+  0x00DA6A,
+
+  # status-panel mode dispatch: the menu jumps through the pointer table at
+  # $D2A0A indexed by $FFF0D0, and every target was an untranslated interior
+  # label, so pressing A in the in-game menu did nothing.
+  0x011B58,
+  0x00D01C,
+  0x011950,
+  0x00FBA6,
+  0x00C2A6,
+  0x012168,
+  0x012634,
+  0x012836,
+  0x011040,
+
+  # Pocket Secretary main-menu entries (node table $C1400): all were
+  # untranslated interior labels, so selecting an item did nothing.
+  0x00F236,
+  0x00C8C8,
+  0x018150,
+  0x00C448,
+  0x00EFB4,
+  0x0599DA,
+]
