@@ -93,11 +93,31 @@ The third one diffs frames against BizHawk and needs a copy of BizHawk in
 See [`STATUS.md`](STATUS.md) for exactly what is verified, what is not, and what
 the known differences from the original hardware are.
 
-## Legal
+## Legal posture
 
-Shadowrun is a trademark of The Topps Company / FASA; the game is © SEGA.
-This project ships no game content and is not affiliated with or endorsed by
-any rights holder. Obtain the ROM legally, from a cartridge you own.
+Shadowrun is a trademark of The Topps Company / FASA; the game is © SEGA. This
+project is not affiliated with or endorsed by any rights holder.
+
+What this repository contains and does not contain:
+
+| | |
+|---|---|
+| Contains | a recompiler patch, a per-game adapter (`GameSpec`, host stubs), a build configuration, build/validation scripts and documentation |
+| Does **not** contain | the ROM, translated (generated) C, graphics, audio, save files, screenshots, or any prebuilt binary |
+| `game/game.toml` | function addresses, seeds and dispatch facts measured from the ROM - configuration data, no code or expressive content |
+
+Static recompilation is, legally, a translation of someone else's program. That
+translation is created **on your machine, from the ROM you own**, when you run the
+recompiler - the same posture as an emulator: the tool contains no game code, and
+the derived work never gets distributed. For that reason:
+
+* **do not publish a compiled `ShadowrunRecomp.exe`** - it embeds translated game
+  code and would be a derivative work being distributed;
+* do not add screenshots, audio captures, box art or save files to this repo;
+* if a rights holder objects, removing this repository removes everything derived
+  from their work; there is nothing else to take down.
+
+Obtain the ROM legally, from a cartridge you own.
 
 Our integration code is licensed under the PolyForm Noncommercial License 1.0.0,
 matching the framework. See `LICENSE.md` and `THIRD-PARTY.md`.

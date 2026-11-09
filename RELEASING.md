@@ -27,6 +27,12 @@ cmake --build build -j
 `build/ShadowrunRecomp.exe` plus `SDL2.dll` is the playable build;
 `scripts\build_runner.ps1` produces the headless harness the validators use.
 
+**Do not distribute those binaries.** A compiled build contains translated
+versions of the game's own 68000 code, so a binary is a derivative work of the
+game in a way that this source tree is not. This project ships source and build
+instructions; every user compiles from the ROM they own. See the legal section in
+`README.md`.
+
 ## Validation and publication
 
 1. Run `scripts\validate-all.ps1` and require the results recorded in
@@ -41,7 +47,7 @@ cmake --build build -j
 | `game/shadowrun.bin` and any ROM | copyrighted game |
 | `generated/` | translated output derived from the ROM |
 | `*.srm`, `*.wav`, `*.bmp`, screenshots | game data / imagery |
-| `build/` and all binaries except the two shipped | build products |
+| `build/` and **every** binary, including a compiled `ShadowrunRecomp.exe` | a build embeds translated game code |
 | `segagenesisrecomp/`, `recomp-ui/` working copies | third-party code, pinned by submodule |
 | `w64devkit`, BizHawk, Dr. Memory and other tools | not redistributable here |
 
