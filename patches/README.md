@@ -17,7 +17,9 @@ pushed slot (18 bytes per call).
 
 Checked against `m68k-recomp-core` `main` on 2026-11-09: still unfixed
 (`result = true` in `prove_from`). Reported as
-<https://github.com/mstan/m68k-recomp-core/issues/14>.
+<https://github.com/mstan/m68k-recomp-core/issues/14> and submitted as
+<https://github.com/mstan/m68k-recomp-core/pull/15> (one file, +42/-1, built and
+tested against this port). Drop this patch when that merges.
 
 ## No SRAM patch needed — pin the framework correctly
 

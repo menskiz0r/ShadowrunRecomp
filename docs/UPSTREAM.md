@@ -91,8 +91,12 @@ Quoted points that shape our M9 layout:
 * `mstan/z80-recomp-core`: no PRs yet.
 
 **Conclusion:** external code-generation PRs are precedented and currently open
-against the same component. Our two codegen fixes and the SRAM mapping fix are
-plausible PRs.
+against the same component.
+
+**What we actually submitted:** <https://github.com/mstan/m68k-recomp-core/pull/15>
+(return-capture fix, one file, +42/-1) and a hard-won lesson: the maintainer does
+not reply to issues, so changes go straight in as PRs. The SRAM report was
+withdrawn once `master` turned out to already implement it (`a7e8c5ea`).
 
 ## Contribution terms
 
