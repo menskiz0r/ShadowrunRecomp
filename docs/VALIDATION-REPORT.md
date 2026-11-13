@@ -271,6 +271,19 @@ After the fix, through 3 M cycles the co-sim reports A7, D1 and RAM **identical*
 at every checkpoint. On screen the SEGA logo now hands over to the title instead
 of freezing, and audio is audible.
 
-Remaining, tracked separately: a watchdog stall at frame ~1717 (a VDP data-port
-copy at `$00A8A8` -> `$C00000` that never yields), and the FM level measured at
-peak 380/32768 in the native path versus 7529 under the interpreter.
+The frame-1717 watchdog stall and the low audio level reported just after the fix
+were **stale generated code**: the earlier A/B build had left capture-classified
+callers in `generated/`, and the regeneration stamp kept them. After a clean
+`build/` wipe and full rebuild:
+
+| check | result |
+|---|---|
+| 12 000-frame run | no crash report, no watchdog |
+| framebuffer | new hash every 2000 frames, through 12 000 |
+| FM peak (mixer, pre-DRC) | 7395 (interpreter reference 7529) |
+| PSG peak | 8182 (was 0) |
+| frame 5000 | `0x5F8D68D6...`, the validated build's title-screen frame |
+
+Lesson recorded: a `generated/` wipe is not enough; a stale generation stamp
+survives it and re-uses old output. Wipe the whole `build/` directory when the
+recompiler itself changes.
