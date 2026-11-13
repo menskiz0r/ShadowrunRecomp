@@ -8,12 +8,12 @@
 # game:           Shadowrun (Shadowrun)
 # build_id:       exe=c47efb6d rom=a64307dd
 # build_info:     game 0.1.0 git c846ac12da; engine git unknown; compiled Nov 13 2026 20:23:24; debug
-# sessions:       2
-# frames:         7202
-# session_frames: 3601 (latest session)
+# sessions:       3
+# frames:         7522
+# session_frames: 320 (latest session)
 # entries:        0
 # first_updated:  2026-11-13T17:23:56Z
-# last_updated:   2026-11-13T17:26:31Z
+# last_updated:   2026-11-13T17:38:42Z
 format_version = 1
 evidence_kind = "floor_unsafe"
 

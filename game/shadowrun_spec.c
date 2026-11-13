@@ -62,13 +62,24 @@ SHADOWRUN_WEAK void genesis_stop_until_interrupt(uint16_t sr_imm)
 }
 
 /* ---- Entry-point / interrupt dispatchers (canonical org-0 addresses) ---- */
-static void shadowrun_call_entry_point(void) { recomp_call_addr(0x000236u); }
-static void shadowrun_call_vblank(void)      { recomp_call_addr(0x00022Eu); }
-static void shadowrun_call_hblank(void)      { recomp_call_addr(0x000228u); }
+static void shadowrun_call_entry_point(void)
+{
+    uint32_t pc = m68k_read32(4) & 0xFFFFFFu;   /* reset vector, as the harness does */
+    recomp_call_addr(pc);
+}
+static void shadowrun_call_vblank(void)
+{
+    uint32_t handler = m68k_read32(0x78) & 0xFFFFFFu;
+    if (handler) recomp_call_addr(handler);
+}
+static void shadowrun_call_hblank(void)
+{
+    uint32_t handler = m68k_read32(0x70) & 0xFFFFFFu;
+    if (handler) recomp_call_addr(handler);
+}
 
 const GameSpec g_game_spec = {
     .video                  = NULL,   /* native VDP presentation only */
-    .logical_players        = 1,
 
     .display_name           = "Shadowrun",
     .short_name             = "Shadowrun",

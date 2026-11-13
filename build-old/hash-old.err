@@ -1,0 +1,34 @@
+[VIDEO] window 640x448 (4:3)
+[VIDEO] renderer name=direct3d11 vsync=1
+[audio] DRC bridge: 223721 Hz internal -> 48000 Hz device (preroll 200 ms, conceal on)
+[evidence] build exe=c47efb6d rom=a64307dd (game 0.1.0 git c846ac12da; engine git unknown; compiled Nov 13 2026 20:23:24; debug); session 3 of this build
+[fiber] game stack 33554432 bytes (engine-owned, committed, guard page)
+[SRAM] no save file yet (D:\git\shrn\port\repo\build-old\shadowrun.srm) â€” starting fresh
+[display] interlace_display=tv
+[pacer] target frame rate: 59.9401 fps
+[pacing] mode=fiber
+[feedback-replay] D:\git\shrn\port\repo\build-old\/logs/Shadowrun-feedback.replay (default on; attach replay and all sidecars)
+[rewind] 60 snapshots, interval 6 (6.0 seconds)
+[rewind] snapshot size 159137 bytes; full ring about 9.1 MiB
+[rewind] local presentation 0 bytes; retained history 2925857 bytes; budget 128 MiB (plus one capture spare)
+[FBHASH] frame=20 w=320 h=224 hash=0x2A0B972960C5E325
+[FBHASH] frame=40 w=320 h=224 hash=0x2A0B972960C5E325
+[FBHASH] frame=60 w=320 h=224 hash=0x2A0B972960C5E325
+[FBHASH] frame=80 w=320 h=224 hash=0x2A0B972960C5E325
+[FBHASH] frame=100 w=320 h=224 hash=0x2A0B972960C5E325
+[FBHASH] frame=120 w=320 h=224 hash=0x2A0B972960C5E325
+[FBHASH] frame=140 w=320 h=224 hash=0x65C49A69C4E61296
+[FBHASH] frame=160 w=320 h=224 hash=0xD6742B76498D8EBF
+[FBHASH] frame=180 w=320 h=224 hash=0x9F99E61C21CF5E3F
+[FBHASH] frame=200 w=320 h=224 hash=0x635CB0B62524A958
+[FBHASH] frame=220 w=320 h=224 hash=0x378B48F3A48DB27C
+[FBHASH] frame=240 w=320 h=224 hash=0x2A0B972960C5E325
+[FBHASH] frame=260 w=320 h=224 hash=0x2A0B972960C5E325
+[FBHASH] frame=280 w=320 h=224 hash=0x2A0B972960C5E325
+[FBHASH] frame=300 w=320 h=224 hash=0x2A0B972960C5E325
+[FBHASH] frame=320 w=320 h=224 hash=0x2A0B972960C5E325
+[session] loop ended: running=1 frame=320
+[DONE] 320 frames completed
+[INTERP] hybrid_jmp/call_interpret: 0 total calls, 0 unique true-miss addrs, 0 raw miss events
+[VBLA] cvblank_fires=0 VBla_Exit=0 VBla_Music=0 loc_B88=0
+[rewind] shutdown: 53 snapshots retained, 11412917 guest/presentation/thumbnail bytes

@@ -93,3 +93,43 @@ Conclusion: automating the SDL route from the start needs state variables for th
 **front-end** screens, which have not been identified. That is a larger
 reverse-engineering task (find what the title/menu/archetype code tests), not a
 tuning problem - three separate attempts with state gates all blocked on it.
+
+## 2026-11-13: the SDL build freezes after the logo - NARROWED
+
+Symptom: the window shows the SEGA logo animation, then the picture reverts to the
+boot image and never changes again.
+
+Measured with `--hash-frames` (FNV-1a-64 of the framebuffer), cross-checked against
+the validated headless build's BMPs hashed the same way:
+
+| frame | native (recompiled) | interpreter (`GENESIS_FORCE_INTERP=1`) | headless reference |
+|---|---|---|---|
+| 200 | `0x635CB0B6...` | `0x635CB0B6...` | `0x635CB0B6...` |
+| 240 | `0x2A0B9729...` (boot image) | changes | changes |
+| 400 | `0x2A0B9729...` (frozen) | `0x1AF74A08...` | changes |
+
+So:
+
+* the config, the ROM and the port are fine - the **interpreter runs the same frames
+  as the validated headless build** (frame 600 matched exactly during a longer run);
+* the **recompiled** path diverges at the logo-to-title transition and freezes;
+* no dispatch misses, no floor entries, no crash report - it is a *mis-executed*
+  path inside generated code, not a missing one.
+
+Ruled out along the way (each tested, not assumed): the framework commit (old
+`2445cd2` freezes identically), pacing mode (`fiber` and `accurate` both freeze),
+the STOP handler (a no-op variant freezes identically), renderer driver (software,
+opengl, direct3d, direct3d11 all black in screenshots), the GameSpec body (mirroring
+the working headless adapter changes nothing), and the interpreter floor
+(`GENESIS_FLOOR=1` finds nothing to interpret).
+
+Playable workaround today:
+
+```powershell
+$env:GENESIS_FORCE_INTERP = '1'
+build\ShadowrunRecomp.exe shadowrun.bin
+```
+
+Slower (interpreted), but it runs the game. The native path needs the generated
+code around the logo exit traced against the interpreter to find the mis-translated
+routine.

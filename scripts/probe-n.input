@@ -1,0 +1,5 @@
+WAIT 600
+SCREENSHOT shots/n600.png
+WAIT 300
+SCREENSHOT shots/n900.png
+EXIT 0
