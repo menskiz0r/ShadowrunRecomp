@@ -130,6 +130,16 @@ $env:GENESIS_FORCE_INTERP = '1'
 build\ShadowrunRecomp.exe shadowrun.bin
 ```
 
-Slower (interpreted), but it runs the game. The native path needs the generated
-code around the logo exit traced against the interpreter to find the mis-translated
-routine.
+Slower (interpreted), but it runs the game: with `--hash-frames` the interpreter
+produces a new frame every sample (200/400/.../1800 all differ, and frame 600
+matches the validated headless build byte-for-byte). `play.bat` next to the exe
+sets this for you.
+
+The native path still stalls on the boot image after the logo, with occasional
+partial redraws. Ruled out so far (each tested): the framework commit, pacing mode,
+the STOP handler, the renderer, the GameSpec body, the interpreter floor, and the
+`vblank_yield_addr` replacement (disabling it changes timing but does not unstick
+the loop). The remaining difference is in generated code around the logo-to-title
+transition and needs the co-sim target (`GENESIS_COSIM`, `docs/COSIM.md`, pairing #1
+recomp-vs-interp) to name the offending routine; that target is not built by this
+CMakeLists yet.
