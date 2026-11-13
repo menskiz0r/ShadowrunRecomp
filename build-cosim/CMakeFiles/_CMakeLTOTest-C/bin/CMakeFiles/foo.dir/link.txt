@@ -1,0 +1,2 @@
+"D:/git/shrn/port/build/w64devkit/w64devkit/bin/gcc-ar.exe" qc libfoo.a CMakeFiles/foo.dir/foo.c.obj
+"D:/git/shrn/port/build/w64devkit/w64devkit/bin/gcc-ranlib.exe" libfoo.a

@@ -1,0 +1,3 @@
+D:\git\shrn\port\build\cmake_dist\cmake-4.4.5-windows-x86_64\bin\cmake.exe -E rm -f CMakeFiles\M68kStepRecomp.dir/objects.a
+D:\git\shrn\port\build\w64devkit\w64devkit\bin\ar.exe qc CMakeFiles\M68kStepRecomp.dir/objects.a @CMakeFiles\M68kStepRecomp.dir\objects1.rsp
+D:\git\shrn\port\build\w64devkit\w64devkit\bin\cc.exe -Wl,--whole-archive CMakeFiles\M68kStepRecomp.dir/objects.a -Wl,--no-whole-archive -o ..\M68kStepRecomp.exe -Wl,--out-implib,libM68kStepRecomp.dll.a -Wl,--major-image-version,0,--minor-image-version,0 @CMakeFiles\M68kStepRecomp.dir\linkLibs.rsp

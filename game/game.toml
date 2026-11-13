@@ -16,16 +16,13 @@ jump_table_autodiscovery = true
 # $000BD2: addq.w #1,$FFDF88 / move.w $FFF9F6,d7 / wait for the V-int counter at
 # $FFF9EE to change / store / rts. This is the title's frame-sync helper; the
 # runner replaces it with the normal scheduler yield stub.
-# vblank_yield_addr disabled for this title: the routine at $000BD2 has
-# side effects (increments $FFDF88, syncs $FFF9EE/$FFF9F6); replacing it with a
-# bare yield stub loses them and the game stalls after the logo.
-# vblank_yield_addr = 0x000BD2
+vblank_yield_addr = 0x000BD2
 
 [ram_layout]
 # Cosmetic fields are unknown for this title and left at 0.
 game_mode      = 0x000000
-vint_runcount  = 0x000000
-vint_routine   = 0x000000
+vint_runcount  = 0x00F9EC
+vint_routine   = 0x00F9F0
 plc_pending    = 0x000000
 # Load-bearing: reset SSP from the vector table.
 initial_ssp    = 0x00FFFFF8

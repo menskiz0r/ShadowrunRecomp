@@ -1,0 +1,7 @@
+pipeline=2
+prefix=shadowrun
+game=D:/git/shrn/port/repo/game
+rom=D:/git/shrn/port/repo/game/shadowrun.bin
+reverse_debug=0
+rom_present=1
+input=D:/git/shrn/port/repo/game/game.toml

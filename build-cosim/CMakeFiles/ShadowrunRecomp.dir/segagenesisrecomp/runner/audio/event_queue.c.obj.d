@@ -1,0 +1,33 @@
+CMakeFiles/ShadowrunRecomp.dir/segagenesisrecomp/runner/audio/event_queue.c.obj: \
+ D:\git\shrn\port\repo\segagenesisrecomp\runner\audio\event_queue.c \
+ D:/git/shrn/port/repo/game/shadowrun_compat.h \
+ D:\git\shrn\port\repo\segagenesisrecomp\runner\audio\event_queue.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/lib/gcc/x86_64-w64-mingw32/16.2.0/include/stdint.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/stdint.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/crtdefs.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/corecrt.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/_mingw.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/_mingw_mac.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/_mingw_secapi.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/vadefs.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/lib/gcc/x86_64-w64-mingw32/16.2.0/include/stddef.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/stddef.h \
+ D:/git/shrn/port/repo/segagenesisrecomp/runner/chip_trace.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/assert.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/stdio.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/corecrt_stdio_config.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/_mingw_off_t.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/swprintf.inl \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/sec_api/stdio_s.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/stdlib.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/corecrt_wstdlib.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/lib/gcc/x86_64-w64-mingw32/16.2.0/include/limits.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/lib/gcc/x86_64-w64-mingw32/16.2.0/include/syslimits.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/limits.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/sec_api/stdlib_s.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/malloc.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/lib/gcc/x86_64-w64-mingw32/16.2.0/include/mm_malloc.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/errno.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/string.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/sec_api/string_s.h \
+ D:/git/shrn/port/repo/segagenesisrecomp/runner/cosim.h

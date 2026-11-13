@@ -1,0 +1,23 @@
+CMakeFiles/ShadowrunRecomp.dir/recomp-ui/src/consoles/psx/psx_pad_binds.c.obj: \
+ D:\git\shrn\port\repo\recomp-ui\src\consoles\psx\psx_pad_binds.c \
+ D:/git/shrn/port/repo/game/shadowrun_compat.h \
+ D:\git\shrn\port\repo\recomp-ui\src\consoles\psx\psx_pad_binds.h \
+ D:\git\shrn\port\repo\recomp-ui\src\consoles\psx\psx_profile.h \
+ D:/git/shrn/port/repo/recomp-ui/src/common/launcher_system_types.h \
+ D:/git/shrn/port/repo/recomp-ui/src/recomp_launcher.h \
+ D:/git/shrn/port/repo/recomp-ui/src/recomp_card_manager.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/lib/gcc/x86_64-w64-mingw32/16.2.0/include/stddef.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/stddef.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/crtdefs.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/corecrt.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/_mingw.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/_mingw_mac.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/_mingw_secapi.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/vadefs.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/lib/gcc/x86_64-w64-mingw32/16.2.0/include/stdint.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/stdint.h \
+ D:/git/shrn/port/repo/recomp-ui/src/common/launcher_model.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/lib/gcc/x86_64-w64-mingw32/16.2.0/include/stdbool.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/string.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/sec_api/string_s.h \
+ D:/git/shrn/port/repo/recomp-ui/src/common/pad_binds.h

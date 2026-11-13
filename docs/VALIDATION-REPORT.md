@@ -143,3 +143,27 @@ the loop). The remaining difference is in generated code around the logo-to-titl
 transition and needs the co-sim target (`GENESIS_COSIM`, `docs/COSIM.md`, pairing #1
 recomp-vs-interp) to name the offending routine; that target is not built by this
 CMakeLists yet.
+
+### 2026-11-13 (later): the picture freezes, the game does not
+
+Adding the VDP display bit and reading the per-frame RAM hash in the frame log
+corrected the diagnosis:
+
+* the **work-RAM hash changes every frame** through the freeze (frames 225-260
+  all differ), so the game logic keeps running;
+* the **framebuffer** stops changing and stays on the SEGA-logo image;
+* `genesis_vdp.c` skips row rendering entirely while the display is disabled
+  (`if (!gvdp_display_enabled(v)) return;`), so a disabled display explains a
+  frozen picture with a live simulation;
+* VRAM at frame 240 differs from the interpreter's in 296 bytes, in a
+  small table at VRAM $0000-$0FFF (values 0-31, stride 4).
+
+So this is a *rendering* divergence, not a hang. The recompiled code and the
+interpreter disagree about what the game wrote to the VDP between frames ~230
+and ~240.
+
+Getting the PC needs the co-sim target (`docs/COSIM.md`, pairing #1). A
+`SHADOWRUN_BUILD_COSIM` option was added to `CMakeLists.txt`, but it does not link
+yet: `m68k_interp.c` needs `game_insn_cost()`, which comes from a per-game
+instruction-cost table (`<prefix>_cycles.c`) that this project does not generate.
+Producing that table is the prerequisite for the co-sim build.

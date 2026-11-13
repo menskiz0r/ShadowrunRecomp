@@ -155,3 +155,37 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/recomp-ui/recomp_ui.cmake")
 else()
     message(STATUS "recomp-ui: not present, building without the launcher")
 endif()
+
+# --- dev-only co-simulation target (recomp vs the Tier-3 interpreter) --------
+# docs/COSIM.md pairing #1: reports the first divergence between the recompiled
+# code and the clean-room interpreter. Never shipped.
+option(SHADOWRUN_BUILD_COSIM "Build the recomp-vs-interpreter co-sim target" OFF)
+if(SHADOWRUN_BUILD_COSIM)
+    set(COSIM_CYCLES "${CMAKE_CURRENT_BINARY_DIR}/generated/${PREFIX}/${PREFIX}_cycles.c")
+    if(EXISTS "${COSIM_CYCLES}")
+        list(APPEND COSIM_EXTRA "${COSIM_CYCLES}")
+    endif()
+    set(COSIM_SOURCES
+        ${COSIM_EXTRA}
+        "${RUNNER_ROOT}/cosim.c"
+        "${RUNNER_ROOT}/cosim_state.c"
+        "${RUNNER_ROOT}/cosim_visible.c"
+        "${RUNNER_ROOT}/cosim_cycles.c")
+    add_executable(ShadowrunRecomp_cosim
+        ${RUNNER_SOURCES} ${GENERATED_SOURCES} ${COSIM_SOURCES}
+        "${CMAKE_SOURCE_DIR}/game/${PREFIX}_spec.c")
+    target_compile_definitions(ShadowrunRecomp_cosim PRIVATE
+        INCLUDE_GENERATED_CODE=1 ENABLE_RECOMPILED_CODE=1 OWN_BACKEND=1
+        GENESIS_COSIM=1
+        SHADOWRUN_BUILD_VERSION="${SHADOWRUN_BUILD_VERSION}")
+    target_include_directories(ShadowrunRecomp_cosim PRIVATE
+        "${RUNNER_ROOT}" "${RUNNER_ROOT}/include" "${RUNNER_ROOT}/video"
+        "${RUNNER_ROOT}/audio" "${RUNNER_ROOT}/external/ymfm/src"
+        "${RUNNER_ROOT}/external/superzazu" "${RUNNER_ROOT}/external/clowncommon"
+        "${RUNNER_ROOT}/external/minicoro" "${RECOMP_ROOT}/recompiler/src"
+        "${CMAKE_SOURCE_DIR}/game" ${SDL2_PARENT_INCLUDE_DIRS})
+    target_link_libraries(ShadowrunRecomp_cosim PRIVATE SDL2::SDL2main SDL2::SDL2)
+    if(WIN32)
+        target_link_libraries(ShadowrunRecomp_cosim PRIVATE ws2_32 comdlg32)
+    endif()
+endif()
