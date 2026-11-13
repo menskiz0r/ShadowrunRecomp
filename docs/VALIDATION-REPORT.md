@@ -204,3 +204,35 @@ with RAM being bit-exact.
 So: the recompiled code produces the same game state as the interpreter. The
 frozen picture is therefore in the rendering/present path, not in the translated
 game logic, and the next measurement is the VDP split at cp 1363.
+
+### Frame-scale co-simulation: first real divergence is a 4-byte stack imbalance
+
+The 2 000 000-cycle run above covers only ~0.2 frames, so it never reaches the
+freeze. Re-running at a 10 000-cycle stride finds the first real RAM divergence at
+**cp 327 (~3.27 M cycles)**:
+
+| | A (recompiled) | B (interpreter) |
+|---|---|---|
+| a7 | `$00FFFFAE` | `$00FFFFB2` |
+| B's PC | - | `$052E7E` |
+
+A7 is exactly one longword lower in the recompiled run, and the interpreter is
+inside the captured-return routine at `$052E4E` (its prologue pops the return into
+A0, pushes a frame and pushes the return back before its `rts` at `$052E82`).
+
+That routine is the one the `0001-return-capture` patch changed the classification
+of. Generated callers such as `func_052EB0` now emit the ordinary call form:
+
+```c
+recomp_push_return(0x052EB6u);      /* JSR push */
+RECOMP_CALL_NATIVE(func_052E4E);
+```
+
+while the callee unconditionally consumes that pushed slot. So the caller and the
+callee disagree about who owns the return slot - a four-byte drift that starts on
+the very first call and accumulates.
+
+Next experiment: force `m68k_return_capture_is_unconditional` back to "capture" for
+this site and re-run the co-sim at cp 327. If A7 then matches, the patch needs a
+third classification (`capture-and-continue`: push, call, **no pop, fall through**)
+instead of its current two-way choice.
