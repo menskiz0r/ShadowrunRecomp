@@ -287,3 +287,33 @@ callers in `generated/`, and the regeneration stamp kept them. After a clean
 Lesson recorded: a `generated/` wipe is not enough; a stale generation stamp
 survives it and re-uses old output. Wipe the whole `build/` directory when the
 recompiler itself changes.
+
+### The residual co-sim splits are cycle phase, not defects
+
+After patch 0002 the co-sim still reports `cpu68k`/`timing` splits at cycle
+checkpoints (e.g. cp 3068: A7 `$00FFFFE4` vs `$00FFFFEE`, SR `2704` vs `2700`).
+Sampling around one of them shows both reconverge:
+
+| checkpoint | A7 | SR |
+|---|---|---|
+| 3000 | same | same |
+| 3068 | diff | diff |
+| 3100 | **same** | **same** |
+| 3300-4000 | same | diff |
+| 4200 | same | **same** |
+| 4500 | same | same |
+
+A leaked return slot never heals; this does. The two backends simply sit at
+slightly different instruction boundaries at the same guest cycle, because their
+per-instruction cycle charges differ by a cycle or two (`timingfields` showed
+`audio_cyc` 90638 vs 90640 at an identical `master_cycle`). Confirming evidence:
+
+* strict JSR stack checker (`GENESIS_STRICT_JSR_STACK=1`): zero mismatches over 500 frames;
+* 12 000-frame run: no crash report, no watchdog, new framebuffer hash throughout;
+* frame 5000 renders the validated title frame `0x5F8D68D6...`;
+* FM peak 7395 (interpreter 7529), PSG 8182.
+
+So pairing #1's remaining signal is timing-model granularity, not a translation
+bug. Making it exact would mean matching the interpreter's cycle charges
+instruction-for-instruction - cosmetic for gameplay, and the game-level evidence
+above is the accepted gate.
