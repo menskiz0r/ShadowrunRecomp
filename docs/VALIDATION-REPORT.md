@@ -236,3 +236,41 @@ Next experiment: force `m68k_return_capture_is_unconditional` back to "capture" 
 this site and re-run the co-sim at cp 327. If A7 then matches, the patch needs a
 third classification (`capture-and-continue`: push, call, **no pop, fall through**)
 instead of its current two-way choice.
+
+### The logo freeze is fixed (2026-11-13)
+
+Root cause found with the co-simulation, not by guessing: the `rts` emitter in
+`code_generator.c` treated `_sp_popped >= 4` as "the callee already popped the
+return address". `_sp_popped` counts every `(SP)+`, including ordinary saved
+register restores, so any function whose epilogue is
+
+```
+move.w (s7)+,d0
+move.w (s7)+,sr
+rts
+```
+
+made its caller skip the return-slot pop - a four-byte stack leak per call.
+`$0E34` (the VDP control-port setter called from `$0C88`) is exactly that shape.
+
+Evidence trail:
+
+* co-sim cp 327 (~3.27 M cycles): A7 `$00FFFFAE` vs `$00FFFFB2`;
+* co-sim cp 3068: A7 `$00FFFFE4` vs `$00FFFFEE`, D1 `$00000000` vs `$0000FFFF`,
+  interp at PC `$052E7E`;
+* cp 61378 (50-cycle stride): split while the interpreter sat at `$0C88`
+  (`bsr.w $0E34`);
+* generated `func_000E9C` showed the bad `rts` emission verbatim.
+
+Fix: `patches/0002-rts-return-slot.patch` - a callee may consume its return slot
+only when it is **proven** to capture the return, or when it skips SP through an
+explicit `ADDQ/SUBQ` (the SMPS stop-track pattern). A/B check: forcing the old
+classification gave an A7 error of `0x4E`; the patch gives exact agreement.
+
+After the fix, through 3 M cycles the co-sim reports A7, D1 and RAM **identical**
+at every checkpoint. On screen the SEGA logo now hands over to the title instead
+of freezing, and audio is audible.
+
+Remaining, tracked separately: a watchdog stall at frame ~1717 (a VDP data-port
+copy at `$00A8A8` -> `$C00000` that never yields), and the FM level measured at
+peak 380/32768 in the native path versus 7529 under the interpreter.

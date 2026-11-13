@@ -44,3 +44,21 @@ powershell -ExecutionPolicy Bypass -File scripts\apply-framework-patches.ps1
 The script applies each patch with `--dry-run` first, then for real, and stops on
 the first failure. Re-running is safe: an already-applied patch is reported as
 such and skipped.
+
+## 0002-rts-return-slot.patch
+
+`profiles/genesis/code_generator.c`. The `rts` emitter consumed `_sp_popped` as
+"the return address was already popped" whenever the function had any `(SP)+`
+operand. Ordinary saved-register restores (`move.w (a7)+,d0` right before the
+`rts`) therefore made the caller skip its return-slot pop - a 4-byte stack leak
+per call that grows without bound.
+
+Found with the Tier-3 co-simulation: A7 diverged by 4 bytes at cp 327 and by
+0x230 bytes by cp 1200; the divergence began at `$0C88` calling `$0E34`, whose
+epilogue is `move.w (a7)+,d0` / `move.w (a7)+,sr` / `rts`.
+
+The patch only lets a callee consume its return slot when it is **proven** to
+capture the return (`m68k_return_capture_is_unconditional`, the same predicate
+the call sites use) or when it skips SP with an explicit `ADDQ/SUBQ` (the SMPS
+stop-track pattern). After it, A7, D1 and RAM match the interpreter at every
+checkpoint through 3 M cycles.
