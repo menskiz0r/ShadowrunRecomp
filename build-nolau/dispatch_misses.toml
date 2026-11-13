@@ -1,0 +1,22 @@
+# Dispatch misses: computed-dispatch targets that had no generated function.
+# Validate every address against disassembly before adding this file to game.discovery_files.
+# Accumulates across launches of this build only; a different build
+# (executable or ROM) starts a fresh file and keeps the old one as
+# dispatch_misses.prev.toml. Each entry comment gives the session and frame it was
+# first seen in.
+#
+# game:           Shadowrun (Shadowrun)
+# build_id:       exe=e64f4bbd rom=a64307dd
+# build_info:     game 0.1.0 git c846ac12da; engine git 48e0f90da6; compiled Nov 13 2026 20:29:30; debug
+# sessions:       1
+# frames:         3601
+# session_frames: 3601 (latest session)
+# entries:        0
+# first_updated:  2026-11-13T17:29:37Z
+# last_updated:   2026-11-13T17:29:43Z
+format_version = 1
+evidence_kind = "dispatch_miss"
+
+[functions]
+extra = [
+]

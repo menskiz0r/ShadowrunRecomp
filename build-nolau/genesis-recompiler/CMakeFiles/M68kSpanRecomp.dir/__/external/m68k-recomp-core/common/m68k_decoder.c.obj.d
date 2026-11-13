@@ -1,0 +1,22 @@
+genesis-recompiler/CMakeFiles/M68kSpanRecomp.dir/__/external/m68k-recomp-core/common/m68k_decoder.c.obj: \
+ D:\git\shrn\port\repo\segagenesisrecomp\external\m68k-recomp-core\common\m68k_decoder.c \
+ D:\git\shrn\port\repo\segagenesisrecomp\external\m68k-recomp-core\common\m68k_decoder.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/lib/gcc/x86_64-w64-mingw32/16.2.0/include/stdint.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/stdint.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/crtdefs.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/corecrt.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/_mingw.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/_mingw_mac.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/_mingw_secapi.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/vadefs.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/lib/gcc/x86_64-w64-mingw32/16.2.0/include/stddef.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/stddef.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/lib/gcc/x86_64-w64-mingw32/16.2.0/include/stdbool.h \
+ D:/git/shrn/port/repo/segagenesisrecomp/recompiler/src/rom_parser.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/stdio.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/corecrt_stdio_config.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/_mingw_off_t.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/swprintf.inl \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/sec_api/stdio_s.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/string.h \
+ D:/git/shrn/port/build/w64devkit/w64devkit/include/sec_api/string_s.h

@@ -1,0 +1,9 @@
+{
+	"InstallScripts" : 
+	[
+		"D:/git/shrn/port/repo/build-old/cmake_install.cmake",
+		"D:/git/shrn/port/repo/build-old/rbengine/cmake_install.cmake",
+		"D:/git/shrn/port/repo/build-old/genesis-recompiler/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

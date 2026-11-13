@@ -1,0 +1,9 @@
+{
+	"InstallScripts" : 
+	[
+		"D:/git/shrn/port/repo/build-nolau/cmake_install.cmake",
+		"D:/git/shrn/port/repo/build-nolau/rbengine/cmake_install.cmake",
+		"D:/git/shrn/port/repo/build-nolau/genesis-recompiler/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

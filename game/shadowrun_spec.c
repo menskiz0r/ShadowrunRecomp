@@ -54,7 +54,11 @@ SHADOWRUN_WEAK void genesis_stop_until_interrupt(uint16_t sr_imm)
 {
     extern M68KState g_cpu;
     g_cpu.SR = sr_imm;
-    glue_wait_vblank_done();
+    /* STOP halts the 68K until an interrupt of higher priority arrives. The
+     * runtime parks the game fiber so the runner keeps pacing frames and the
+     * next VBlank raises the IRQ (see genesis_runtime.h). glue_wait_vblank_done()
+     * is a no-op on the fiber runner, so calling it made STOP fall through. */
+    glue_yield_for_vblank();
 }
 
 /* ---- Entry-point / interrupt dispatchers (canonical org-0 addresses) ---- */

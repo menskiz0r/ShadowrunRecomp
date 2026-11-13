@@ -1,0 +1,126 @@
+# JMP-table dispatch audit
+# total sites: 104
+#
+# Summary:
+#   static_target            103  (JMP with statically resolved target — safe)
+#   in_function_switch         0  (JMP(PC,Dn.W) compiled to in-function switch+goto — safe, this is the Duff's-device fix)
+#   dynamic_register           1  (JMP (An)/(d,An)/(An,Xn) — runtime address from register, safe via call_by_address)
+#   fallback_hybrid                — JMP(PC,Dn.W) routed through hybrid_jmp_interpret; subdivided:
+#     function_entry           0    (base IS a registered function — call_by_address resolves it directly)
+#     bra_w_trampoline         0    (base opcode = 0x6000; runtime miss feedback works)
+#     offset_table             0    (base is a dc.w (target-base) table; 1+ entries decode to functions — runtime resolves it)
+#     INTERIOR_UNRESOLVED      0    (DANGER: base is interior to a function, NOT one of the safe patterns above — silent failure class like pre-fix CPZ)
+#     external_unresolved      0    (base outside any known function — investigate)
+#   unsupported                0  (decoder hit a JMP mode the emitter doesn't handle)
+#
+# When `interior_unresolved` is non-zero, inspect each site — these are
+# Sonic-2-CPZ-style silent-failure candidates. Either the recompiler's
+# Duff's-device probe (probe_pc_idx_targets) didn't match, or the table
+# really is a new pattern that needs new codegen support.
+#
+# Format: <jmp_addr>  in func <func>  base <base>  kind=<kind>[ targets=N]
+
+$000228  in func $000228  base $001080  kind=static_target
+$00022E  in func $00022E  base $001070  kind=static_target
+$000734  in func $0006C6  base $00075E  kind=static_target
+$000790  in func $00075E  base $0002C2  kind=static_target
+$0014C8  in func $001406  base $000BD2  kind=static_target
+$001D74  in func $001D58  base $001728  kind=static_target
+$001DDA  in func $001DCA  base $00C0DA  kind=static_target
+$001DF0  in func $001DE0  base $00C0DA  kind=static_target
+$001E48  in func $001DF6  base $00C0DA  kind=static_target
+$0028A4  in func $00286E  base $01E4AC  kind=static_target
+$0028BC  in func $0028AA  base $00C0C2  kind=static_target
+$002A2C  in func $002900  base $005B7E  kind=static_target
+$002A8E  in func $002A52  base $0136DE  kind=static_target
+$00302C  in func $00301E  base $000F98  kind=static_target
+$004D44  in func $004CDE  base $0530DE  kind=static_target
+$004DBA  in func $004D54  base $0530DE  kind=static_target
+$004F1C  in func $004E86  base $0013BE  kind=static_target
+$005982  in func $005936  base $001378  kind=static_target
+$0059E4  in func $005936  base $001378  kind=static_target
+$005A30  in func $0059EA  base $001378  kind=static_target
+$005D7C  in func $005C7E  base $001378  kind=static_target
+$00AD9E  in func $00ACAE  base $00AFAE  kind=static_target
+$00ADA4  in func $00ACAE  base $00AF7C  kind=static_target
+$00ADD6  in func $00ACAE  base $00B3FE  kind=static_target
+$00AE16  in func $00ACAE  base $00B1DC  kind=static_target
+$00AE20  in func $00ACAE  base $00B39A  kind=static_target
+$00AEB4  in func $00AE6E  base $01033E  kind=static_target
+$00C0D4  in func $00C0C2  base $001530  kind=static_target
+$00C8EC  in func $00C8C8  base $00F312  kind=static_target
+$00C922  in func $00C8C8  base $00F312  kind=static_target
+$00EFAE  in func $00EF08  base $00F312  kind=static_target
+$00EFE0  in func $00EFB4  base $00F312  kind=static_target
+$00F12C  in func $00EFB4  base $00F312  kind=static_target
+$00F180  in func $00EFB4  base $00F312  kind=static_target
+$00FBEE  in func $00FBA6  base $011928  kind=static_target
+$011768  in func $011740  base $000000  kind=dynamic_register
+$0121DA  in func $012168  base $000D94  kind=static_target
+$012678  in func $012634  base $000D94  kind=static_target
+$012864  in func $012836  base $000D94  kind=static_target
+$013974  in func $013904  base $01E514  kind=static_target
+$013A82  in func $013A4C  base $00AFAE  kind=static_target
+$013A88  in func $013A4C  base $00AF7C  kind=static_target
+$013F8A  in func $013F76  base $01DBAA  kind=static_target
+$01409A  in func $013FFE  base $00B3FE  kind=static_target
+$014110  in func $013FFE  base $00AFAE  kind=static_target
+$014116  in func $013FFE  base $00AF7C  kind=static_target
+$01419A  in func $013FFE  base $014226  kind=static_target
+$0141D8  in func $013FFE  base $00B1DC  kind=static_target
+$0141EC  in func $013FFE  base $00B39A  kind=static_target
+$014220  in func $013FFE  base $00B11C  kind=static_target
+$0142A8  in func $014226  base $0036FC  kind=static_target
+$014D64  in func $014D58  base $015D3C  kind=static_target
+$01582A  in func $01582A  base $01A2CC  kind=static_target
+$015850  in func $015830  base $0049A2  kind=static_target
+$016B1A  in func $016AFA  base $000F5C  kind=static_target
+$0176E4  in func $0176BA  base $001530  kind=static_target
+$0177F6  in func $0177CC  base $001530  kind=static_target
+$018178  in func $018150  base $00F312  kind=static_target
+$0190CA  in func $019018  base $019116  kind=static_target
+$0190FE  in func $019018  base $019180  kind=static_target
+$01917A  in func $019018  base $018252  kind=static_target
+$019232  in func $019018  base $019138  kind=static_target
+$01B874  in func $01B81A  base $0530DE  kind=static_target
+$01E0B2  in func $01E09A  base $0530D2  kind=static_target
+$01F5E2  in func $01F5CA  base $00C64C  kind=static_target
+$052EC0  in func $052EB6  base $052E84  kind=static_target
+$052EE6  in func $052ECC  base $052E84  kind=static_target
+$052F54  in func $052F44  base $052E84  kind=static_target
+$052FAE  in func $052FA6  base $052E84  kind=static_target
+$0531CC  in func $0531AA  base $052FA0  kind=static_target
+$056E90  in func $056DC4  base $000D94  kind=static_target
+$056F1E  in func $056DC4  base $000D94  kind=static_target
+$056F9C  in func $056DC4  base $000D94  kind=static_target
+$057118  in func $056DC4  base $000D94  kind=static_target
+$057144  in func $056DC4  base $000D94  kind=static_target
+$057302  in func $056DC4  base $000D94  kind=static_target
+$057460  in func $056DC4  base $000D94  kind=static_target
+$05748C  in func $056DC4  base $000D94  kind=static_target
+$05759E  in func $056DC4  base $000D94  kind=static_target
+$0575C2  in func $056DC4  base $000D94  kind=static_target
+$0576EE  in func $05766A  base $000D94  kind=static_target
+$057732  in func $05766A  base $000D94  kind=static_target
+$05783E  in func $0577BA  base $000D94  kind=static_target
+$057906  in func $0578C4  base $000D94  kind=static_target
+$057948  in func $0578C4  base $000D94  kind=static_target
+$0579B8  in func $05794E  base $000D94  kind=static_target
+$0579E6  in func $05794E  base $000D94  kind=static_target
+$059242  in func $059172  base $000D94  kind=static_target
+$059D38  in func $059D12  base $0134D2  kind=static_target
+$05A392  in func $05A37C  base $001378  kind=static_target
+$05A9DC  in func $05A96A  base $00C0DA  kind=static_target
+$05AA18  in func $05A9E2  base $00C0DA  kind=static_target
+$05AA54  in func $05AA1E  base $00C0DA  kind=static_target
+$05AA90  in func $05AA5A  base $00C0DA  kind=static_target
+$05AE34  in func $05ADFE  base $00C0DA  kind=static_target
+$05AE98  in func $05AE3A  base $00C0DA  kind=static_target
+$05AEC0  in func $05AE9E  base $00C0DA  kind=static_target
+$05BA60  in func $05BA50  base $001530  kind=static_target
+$05D59C  in func $05D57E  base $001378  kind=static_target
+$05D5F6  in func $05D5A2  base $001378  kind=static_target
+$05D654  in func $05D5FC  base $001378  kind=static_target
+$05D6B6  in func $05D65A  base $001378  kind=static_target
+$05D8DA  in func $05D8BA  base $05B2E2  kind=static_target
+$05DA1A  in func $05D996  base $001378  kind=static_target

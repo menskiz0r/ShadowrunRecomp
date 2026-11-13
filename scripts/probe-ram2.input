@@ -1,0 +1,5 @@
+WAIT 3000
+DUMP_RAM dumps/p3000.ram
+WAIT 3000
+DUMP_RAM dumps/p6000.ram
+EXIT 0

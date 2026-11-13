@@ -1,0 +1,24 @@
+input_script: loaded 9 directives from D:\git\shrn\port\repo\scripts\probe-time.input
+[VIDEO] window 640x448 (4:3)
+[VIDEO] renderer name=direct3d11 vsync=0
+[audio] DRC bridge: 223721 Hz internal -> 48000 Hz device (preroll 200 ms, conceal on)
+[evidence] build exe=e64f4bbd rom=a64307dd (game 0.1.0 git c846ac12da; engine git 48e0f90da6; compiled Nov 13 2026 20:29:30; debug); session 1 of this build
+[fiber] game stack 33554432 bytes (engine-owned, committed, guard page)
+[SRAM] no save file yet (D:\git\shrn\port\repo\build-nolau\shadowrun.srm) â€” starting fresh
+[display] interlace_display=tv
+[pacer] target frame rate: 59.9401 fps
+[pacing] mode=fiber
+[feedback-replay] D:\git\shrn\port\repo\build-nolau\/logs/Shadowrun-feedback.replay (default on; attach replay and all sidecars)
+[rewind] 60 snapshots, interval 6 (6.0 seconds)
+[rewind] snapshot size 159137 bytes; full ring about 9.1 MiB
+[rewind] local presentation 0 bytes; retained history 2925857 bytes; budget 128 MiB (plus one capture spare)
+[input_script] SCREENSHOT requested at frame 301 (path=shots/t0300.png)
+[SCREENSHOT] wrote D:\git\shrn\port\repo\build-nolau\shots/t0300.png
+[input_script] SCREENSHOT requested at frame 1201 (path=shots/t1200.png)
+[SCREENSHOT] wrote D:\git\shrn\port\repo\build-nolau\shots/t1200.png
+[input_script] SCREENSHOT requested at frame 2401 (path=shots/t2400.png)
+[SCREENSHOT] wrote D:\git\shrn\port\repo\build-nolau\shots/t2400.png
+[input_script] SCREENSHOT requested at frame 3601 (path=shots/t3600.png)
+[input_script] EXIT 0 at frame 3601
+[SCREENSHOT] wrote D:\git\shrn\port\repo\build-nolau\shots/t3600.png
+[input_script] exiting per script directive (code=0)

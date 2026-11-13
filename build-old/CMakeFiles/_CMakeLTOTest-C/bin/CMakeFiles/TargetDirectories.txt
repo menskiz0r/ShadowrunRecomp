@@ -1,0 +1,4 @@
+D:/git/shrn/port/repo/build-old/CMakeFiles/_CMakeLTOTest-C/bin/CMakeFiles/foo.dir
+D:/git/shrn/port/repo/build-old/CMakeFiles/_CMakeLTOTest-C/bin/CMakeFiles/boo.dir
+D:/git/shrn/port/repo/build-old/CMakeFiles/_CMakeLTOTest-C/bin/CMakeFiles/edit_cache.dir
+D:/git/shrn/port/repo/build-old/CMakeFiles/_CMakeLTOTest-C/bin/CMakeFiles/rebuild_cache.dir
