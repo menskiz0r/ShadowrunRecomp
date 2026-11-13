@@ -22,7 +22,7 @@ vblank_yield_addr = 0x000BD2
 # Cosmetic fields are unknown for this title and left at 0.
 game_mode      = 0x000000
 vint_runcount  = 0x00F9EC
-vint_routine   = 0x00F9F0
+vint_routine   = 0x000000   # unknown for this title: 0 = always treat a wait as a real wait
 plc_pending    = 0x000000
 # Load-bearing: reset SSP from the vector table.
 initial_ssp    = 0x00FFFFF8

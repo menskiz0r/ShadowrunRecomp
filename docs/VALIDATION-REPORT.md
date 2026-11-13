@@ -317,3 +317,40 @@ So pairing #1's remaining signal is timing-model granularity, not a translation
 bug. Making it exact would mean matching the interpreter's cycle charges
 instruction-for-instruction - cosmetic for gameplay, and the game-level evidence
 above is the accepted gate.
+
+### Hotel check-out confirm: open, reproducible, intermittent in play
+
+Symptom (manual play): at the hotel terminal, **Check Out** is highlighted, A opens
+"Do you wish to check out?", moving to **Yes** and confirming sometimes puts the
+player in the room (correct) and sometimes drops back to the Hotel Options menu.
+
+A deterministic reproduction exists (`scripts/route-user.input`, native vs
+`scripts/route-user-i.input`, interpreter). Both are driven with the identical
+script: START at login, A on New Game, A on Samurai, START to skip the intro, five
+A presses to the menu, DOWN to Check Out, A, UP to Yes, A.
+
+The two backends are pixel-identical at every step up to the confirm:
+
+| step | native vs interpreter (mean abs diff) |
+|---|---|
+| Hotel Options | 0.32 |
+| cursor on Check Out | 0.13 |
+| "Do you wish to check out?" | 0.33 |
+| cursor on Yes | 0.38 |
+| **after A on Yes** | **38.13** |
+
+The interpreter closes the terminal and leaves the player standing in the room;
+the recompiled build returns to the menu with the cursor reset to Karma Screen.
+
+So the divergence is in the confirm handler, and it is timing-sensitive: with
+scripted input (same frame every run) the recompiled build fails every time, while
+manual play sometimes passes because the press lands on a different frame.
+
+`game.toml` carried `vint_routine = 0x00F9F0`, set during an earlier experiment.
+That address is *cleared* by the VInt handler, so it is not a "routine byte" and
+`glue_yield_for_vblank()` wrongly treated waits as already satisfied. It is back to
+0 (always park), which is the correct default for this title and changes frame
+yield timing - the most likely reason the bug presents intermittently.
+
+Regression after the change: 12 000 frames, no crash report or watchdog, FM peak
+7395, PSG peak 8182, framebuffer hash advancing throughout.
