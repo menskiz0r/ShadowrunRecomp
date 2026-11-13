@@ -1,0 +1,24 @@
+﻿==========================================================================
+  GENESIS HOLISTIC DIVERGENCE REPORT � D:\git\shrn\port\repo\build\ShadowrunRecomp (game=s1, deterministic attract)
+==========================================================================
+
+[1] VALIDATION GATES (trust nothing until these pass)
+    Gate 1  recomp==recomp   : PASS
+    Gate 2  interp==interp   : PASS
+    Gate 3  injected D0 flip : PASS (halted cp=100, split=['cpu68k'])
+
+[2] GOLD STANDARD faithfulness  (recomp vs interp, CYCLE clock, full state, ~2,000,000 cycles)
+    subsystem   first_div   match%   verdict
+    cpu68k           1322   33.02%   SPLIT @cp1322
+    timing           1322   37.38%   SPLIT @cp1322
+    ram                --  100.00%   bit-exact
+    z80                --  100.00%   bit-exact
+    z80ram             --  100.00%   bit-exact
+    handshake          --  100.00%   bit-exact
+    vdp              1363   92.72%   SPLIT @cp1363
+    fm                 --  100.00%   bit-exact
+    psg                --  100.00%   bit-exact
+    evq                --  100.00%   bit-exact
+    => DIVERGES at cp=1322 � investigate (this is a real recompiler bug)
+
+done in 7s

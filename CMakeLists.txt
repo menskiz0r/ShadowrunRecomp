@@ -161,12 +161,17 @@ endif()
 # code and the clean-room interpreter. Never shipped.
 option(SHADOWRUN_BUILD_COSIM "Build the recomp-vs-interpreter co-sim target" OFF)
 if(SHADOWRUN_BUILD_COSIM)
-    set(COSIM_CYCLES "${CMAKE_CURRENT_BINARY_DIR}/generated/${PREFIX}/${PREFIX}_cycles.c")
-    if(EXISTS "${COSIM_CYCLES}")
-        list(APPEND COSIM_EXTRA "${COSIM_CYCLES}")
-    endif()
+    # The recompiler writes the per-instruction cost table here, but the
+    # framework's generated-sources helper does not copy it into generated/.
+    set(COSIM_CYCLES "${CMAKE_CURRENT_BINARY_DIR}/generation-stage/${PREFIX}/${PREFIX}_cycles.c")
+    # Produced by the generation step during the build, so it does not exist at
+    # configure time; add it unconditionally.
+    set_source_files_properties("${COSIM_CYCLES}" PROPERTIES GENERATED TRUE)
+    list(APPEND COSIM_EXTRA "${COSIM_CYCLES}")
     set(COSIM_SOURCES
         ${COSIM_EXTRA}
+        "${RUNNER_ROOT}/game_cycles.c"
+        "${RUNNER_ROOT}/frame_snapshots.c"
         "${RUNNER_ROOT}/cosim.c"
         "${RUNNER_ROOT}/cosim_state.c"
         "${RUNNER_ROOT}/cosim_visible.c"

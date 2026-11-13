@@ -167,3 +167,40 @@ Getting the PC needs the co-sim target (`docs/COSIM.md`, pairing #1). A
 yet: `m68k_interp.c` needs `game_insn_cost()`, which comes from a per-game
 instruction-cost table (`<prefix>_cycles.c`) that this project does not generate.
 Producing that table is the prerequisite for the co-sim build.
+
+### Co-simulation is now built and running (2026-11-13)
+
+`-DSHADOWRUN_BUILD_COSIM=ON` produces `ShadowrunRecomp_cosim.exe`. Two fixes were
+needed against the framework's helper:
+
+1. the per-instruction cost table (`<prefix>_cycles.c`) is written by the
+   recompiler to `generation-stage/<prefix>/` and **never copied into
+   `generated/`**, so the co-sim target must reference the staging path;
+2. the co-sim target needs `runner/game_cycles.c` (defines `game_insn_cost`) and
+   `runner/frame_snapshots.c` (defines `m68k_snapshot`), neither of which the
+   generated-sources helper adds.
+
+Run with the framework's own scorecard (full output in `docs/cosim-report.txt`):
+
+```powershell
+python segagenesisrecomp/tools/divergence_report.py ^
+  --game-config cosim_cfg.json --frames 400 --no-oracle --cycles 2000000
+```
+
+Result at 2 000 000 cycles:
+
+| subsystem | verdict |
+|---|---|
+| ram, z80, z80ram, handshake, fm, psg, evq | **bit-exact** |
+| cpu68k, timing | split at cp 1322 |
+| vdp | split at cp 1363 (92.7 %) |
+
+Drilling the CPU split: at cp 1322 the only differences are `sr` `2700` vs `2704`
+(the Z flag) and `d7` `0x3CEB` vs `0x3CEC`, inside the boot delay loop at
+`$073A` (`move.w #$FFF,d7 / nop / dbra d7,$73E`). That is a *phase* difference of
+one loop iteration at a fixed cycle checkpoint, not a wrong result - consistent
+with RAM being bit-exact.
+
+So: the recompiled code produces the same game state as the interpreter. The
+frozen picture is therefore in the rendering/present path, not in the translated
+game logic, and the next measurement is the VDP split at cp 1363.
