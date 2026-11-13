@@ -154,3 +154,35 @@ frame number.
 
 Both are built from the same `game/game.toml`, the same generated code and the
 same `GameSpec`, so the evidence gathered on the harness applies to the game.
+
+## STOP #imm and the fiber runner (fixed 2026-11-13)
+
+`genesis_stop_until_interrupt()` is game-supplied: the framework declares it but
+never defines it (searching `runner/` finds only the header declaration). The
+first implementation here did
+
+```c
+g_cpu.SR = sr_imm;
+glue_wait_vblank_done();   /* WRONG on this runtime */
+```
+
+`glue_wait_vblank_done()` is a **no-op** on the fiber runner ("In single-threaded
+Step 2, not needed - main loop drives everything", `glue.c`), so STOP fell through
+instead of halting the 68K until the next interrupt. On screen that looks like the
+logo appearing and then the game restarting.
+
+The runtime's own interpreter shows the intended contract (`glue.c`, convergence
+for `GENESIS_COSIM_WAITVBL_PC`):
+
+```c
+g_cpu.SR = 0x2300u;
+glue_yield_for_vblank();
+```
+
+so the handler now sets SR and yields to the vblank fiber (`glue_yield_for_vblank`
+is declared in `genesis_runtime.h`).
+
+Debugging note: `runner_write_screenshot_file()` produced all-black PNGs in this
+environment regardless of renderer (software, opengl, direct3d, direct3d11), while
+the simulation was provably healthy - work RAM at frames 3 000 and 6 000 matched
+the validated headless run at 95 %. Do not judge this build by its screenshots.
