@@ -420,3 +420,18 @@ Tooling built for this investigation and kept: `--pad <hex>`,
 `scripts/route-user*.input`, and the reverse-debug build wiring
 (`GRG_REVERSE_DEBUG=ON` now defines `GEN_REVERSE_DEBUG`/`SONIC_REVERSE_DEBUG` and
 the compat header includes `reverse_debug.h`).
+
+### Check-out fixed (call-site slot accounting)
+
+The fix is `patches/0003-call-site-return-slots.patch`: an indirect `jsr`/`bsr`
+site compares A7 against its own pushed slot after the call. If the callee consumed
+more than its own return (`_tail_k >= 2`), the final `rts` slot is restored and that
+many C frames are unwound - what the guest does at `$DA6A`.
+
+Verified: `scripts/route-user.input` now ends in the hotel room (identical frame to
+the interpreter), boot hashes unchanged, 12 000 frames without a watchdog, FM 7395,
+PSG 8182, PSG was 0 before the audio work.
+
+Open: after firing in the room, ammo depletes but the shot animation does not play
+and the muzzle-flash sprite stays on screen; a second trigger pull has no effect
+(`scripts/route-fire.input` reproduces it - frames f1..f3 are byte-identical).

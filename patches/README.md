@@ -62,3 +62,21 @@ capture the return (`m68k_return_capture_is_unconditional`, the same predicate
 the call sites use) or when it skips SP with an explicit `ADDQ/SUBQ` (the SMPS
 stop-track pattern). After it, A7, D1 and RAM match the interpreter at every
 checkpoint through 3 M cycles.
+
+## 0003-call-site-return-slots.patch
+
+`profiles/genesis/code_generator.c`. Indirect `jsr`/`bsr` (`jsr (a0)`) sites already
+push a return slot and remember its address. After the call they now compare A7
+against that slot: a callee that consumed more than its own return (`_tail_k >= 2`)
+gets its final `rts` slot put back and that many C frames unwound.
+
+Needed by Shadowrun's check-out confirm (`$DA6A`), reached through the menu
+dispatcher `$C436`'s `jsr (a0)`: on Yes it pops the caller's return and the
+dispatcher's return, then `rts`s past both. Solved at the call site because every
+attempt to classify the capture inside the callee (`rts` rejection, pop width,
+A7 delta at the `rts`) either left the menu loop unexited or broke boot.
+
+After it: the route in `scripts/route-user.input` lands in the hotel room exactly
+like the interpreter, boot hashes are unchanged (`0x45E5`/`0xE29B`/`0x06B5` at
+frames 1000/2000/3000), a 12 000-frame run has no watchdog, FM peak 7395 and PSG
+peak 8182.
