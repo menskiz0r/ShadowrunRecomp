@@ -80,3 +80,21 @@ After it: the route in `scripts/route-user.input` lands in the hotel room exactl
 like the interpreter, boot hashes are unchanged (`0x45E5`/`0xE29B`/`0x06B5` at
 frames 1000/2000/3000), a 12 000-frame run has no watchdog, FM peak 7395 and PSG
 peak 8182.
+
+## 0004-local-debug-tooling.patch  (optional, NOT required to build or play)
+
+Developer-only instrumentation kept with the project so investigations are
+reproducible:
+
+* `runner/main.c` - PPM framebuffer dump written alongside each screenshot (the
+  PNG writer emits black in some environments), `--autoshot-dir` periodic capture,
+  and a frame-triggered dump of the reverse-debug block ring
+  (`DSH_BLOCKRING` / `DSH_BLOCKRING_AT`).
+* `runner/cosim.c` - `pad <hex>` command plus `cosim_set_pad_override()`, which
+  lets a co-simulation driver feed identical input to both backends at the same
+  checkpoint. This is how the hotel check-out divergence was found; input scripts
+  drift between instances and cannot be used for that comparison.
+
+Neither change affects emulation: they only read `s_framebuf`, write files, or
+override the input mask when explicitly asked. Apply with
+`git -C segagenesisrecomp apply ../patches/0004-local-debug-tooling.patch`.

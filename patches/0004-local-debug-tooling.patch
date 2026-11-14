@@ -1,0 +1,196 @@
+git.exe : warning: in the working copy of 'runner/cosim.c', LF will be replaced by CRLF the next time Git touches it
+At line:3 char:1
++ & git -C $fw diff -- runner/main.c runner/cosim.c 2>&1 | Out-File -En ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (warning: in the... Git touches it:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+warning: in the working copy of 'runner/main.c', LF will be replaced by CRLF the next time Git touches it
+diff --git a/runner/cosim.c b/runner/cosim.c
+index 618a9bd..8bdfa77 100644
+--- a/runner/cosim.c
++++ b/runner/cosim.c
+@@ -11,6 +11,9 @@
+  * parked. See DIFFERENTIAL-COSIMULATION.md + the GENESIS proposal.
+  */
+ #include "cosim.h"
++/* Deterministic pad injection (pairing #1 driver API). */
++void cosim_set_pad_override(unsigned bits, int active);
++int  cosim_get_pad_override(unsigned *bits);
+ #include "include/genesis_runtime.h"   /* g_cpu, g_cosim_cycle/next_cp, proto */
+ /* The timingfields/vdpfields drill commands + the full-state hash read the own-
+  * backend globals (g_machine/GVDP), which don't exist in the oracle build. */
+@@ -251,6 +254,13 @@ static void handle(sock_t c, char *line) {
+             off += snprintf(out+off, sizeof out-off, " a%d %08x", i, g_cpu.A[i]);
+         off += snprintf(out+off, sizeof out-off, "\n");
+         send_str(c, out);
++        } else if (!strncmp(line, "pad ", 4)) {
++        unsigned v = 0;
++        if (sscanf(line + 4, "%x", &v) == 1)
++            cosim_set_pad_override((unsigned)v, 1);
++        else
++            cosim_set_pad_override(0, 0);
++        send_str(c, "ok\n");
+     } else if (!strncmp(line, "inject ram ", 11)) {
+         unsigned addr, xorv;
+         if (sscanf(line + 11, "%x %x", &addr, &xorv) == 2)
+@@ -431,3 +441,19 @@ void cosim_init(void) {
+     fprintf(stderr, "[COSIM] listening on 127.0.0.1:%u  stride=%llu\n",
+             port, (unsigned long long)s_stride);
+ }
++
++/* Deterministic pad injection for pairing #1: the driver sets one mask and both
++ * instances feed it to the guest on the same checkpoint, so input timing cannot
++ * drift between the recompiled and interpreted sides. */
++static unsigned cosim_pad_bits = 0;
++static int      cosim_pad_active = 0;
++void cosim_set_pad_override(unsigned bits, int active)
++{
++    cosim_pad_bits = bits;
++    cosim_pad_active = active;
++}
++int cosim_get_pad_override(unsigned *bits)
++{
++    if (bits) *bits = cosim_pad_bits;
++    return cosim_pad_active;
++}
+diff --git a/runner/main.c b/runner/main.c
+index 60a0cce..9702854 100644
+--- a/runner/main.c
++++ b/runner/main.c
+@@ -879,6 +879,7 @@ static int      s_sampling_netplay_local = 0;
+ #endif
+ 
+ #include "input_script.h"
++#include "crash_report.h"
+ 
+ static cc_bool input_requested_cb(void *user_data,
+                                    cc_u8f player_id,
+@@ -1063,6 +1064,14 @@ static void collect_sim_input(GenesisSimInput *in)
+     for (int p = 2; p < GENESIS_SIM_MAX_PLAYERS; p++)
+         if (!input_gameplay_blocked())
+             in->pad[p] = (uint16_t)(input_current_mask(p) | input_script_player_mask(p));
++#ifdef GENESIS_COSIM
++    {
++        extern int cosim_get_pad_override(unsigned *bits);
++        unsigned ov = 0;
++        if (cosim_get_pad_override(&ov))
++            in->pad[0] = (uint16_t)ov;
++    }
++#endif
+     for (int p = 0; p < GENESIS_SIM_MAX_PLAYERS; p++)
+         if (input_player_connected(p) || input_script_player_used(p))
+             in->human_mask |= 1u << p;
+@@ -1649,10 +1658,33 @@ static int runner_dump_vram_file(const char *path)
+     return ok;
+ }
+ 
++/* TEMPORARY: dump the same buffer as an uncompressed PPM so the image can be
++ * inspected even when the PNG writer produces black output in this build. */
++static void dsh_dump_ppm(const char *path)
++{
++    char ppm[600];
++    snprintf(ppm, sizeof ppm, "%s.ppm", path);
++    FILE *f = fopen(ppm, "wb");
++    if (!f) return;
++    fprintf(f, "P6\n%d %d\n255\n", s_screen_width, s_screen_height);
++    for (int y = 0; y < s_screen_height; y++) {
++        const uint32_t *row = s_framebuf + (size_t)y * MAX_SCREEN_WIDTH;
++        for (int x = 0; x < s_screen_width; x++) {
++            uint32_t px = row[x];
++            unsigned char rgb[3] = { (unsigned char)((px >> 16) & 0xFF),
++                                     (unsigned char)((px >> 8) & 0xFF),
++                                     (unsigned char)(px & 0xFF) };
++            fwrite(rgb, 1, 3, f);
++        }
++    }
++    fclose(f);
++}
++
+ int runner_write_screenshot_file(const char *path)
+ {
+     char full_path[512];
+     const char *resolved = resolve_runner_path(path, full_path, sizeof(full_path));
++    dsh_dump_ppm(resolved);
+     int ok = png_write_argb(resolved, s_framebuf,
+                             s_screen_width, s_screen_height,
+                             MAX_SCREEN_WIDTH) == 0;
+@@ -1715,6 +1747,60 @@ static void check_ramdump(void)
+ #endif
+ }
+ 
++/* TEMPORARY: periodic framebuffer capture for hands-on sessions.
++ * DSH_AUTOSHOT=<dir> writes <dir>/f%05u.ppm every DSH_AUTOSHOT_EVERY frames. */
++static const char *s_autoshot_dir = NULL;   /* set by --autoshot-dir */
++static int s_autoshot_every = 30;
++static void dsh_autoshot(uint32_t frame)
++{
++    static int every = -1;
++    const char *dir = s_autoshot_dir ? s_autoshot_dir : getenv("DSH_AUTOSHOT");
++    if (!dir || !*dir) return;
++    if (every < 0) {
++        const char *e = getenv("DSH_AUTOSHOT_EVERY");
++        every = s_autoshot_every;
++        if (!s_autoshot_dir && e && *e) every = atoi(e);
++        if (every <= 0) every = 30;
++    }
++    if (frame % (uint32_t)every) return;
++    char path[512];
++    snprintf(path, sizeof path, "%s/f%05u.ppm", dir, frame);
++    FILE *f = fopen(path, "wb");
++    if (!f) return;
++    fprintf(f, "P6\n%d %d\n255\n", s_screen_width, s_screen_height);
++    for (int y = 0; y < s_screen_height; y++) {
++        const uint32_t *row = s_framebuf + (size_t)y * MAX_SCREEN_WIDTH;
++        for (int x = 0; x < s_screen_width; x++) {
++            uint32_t px = row[x];
++            unsigned char rgb[3] = { (unsigned char)((px >> 16) & 0xFF),
++                                     (unsigned char)((px >> 8) & 0xFF),
++                                     (unsigned char)(px & 0xFF) };
++            fwrite(rgb, 1, 3, f);
++        }
++    }
++    fclose(f);
++}
++
++/* TEMPORARY: dump the reverse-debug block ring at a chosen frame. */
++static void dsh_blockring_dump(uint32_t frame)
++{
++    static int done = 0;
++    const char *at = getenv("DSH_BLOCKRING_AT");
++    if (!at || !*at || done) return;
++    unsigned long want = strtoul(at, NULL, 0);
++    if (frame < want) return;
++    done = 1;
++    const char *path = getenv("DSH_BLOCKRING");
++    if (!path || !*path) return;
++    uint32_t buf[512]; uint32_t total = 0;
++    unsigned n = crash_report_recent_blocks(buf, 512, &total);
++    FILE *f = fopen(path, "w");
++    if (!f) return;
++    fprintf(f, "# frame %u total %u\n", frame, total);
++    for (unsigned i = 0; i < n; i++) fprintf(f, "%06X\n", buf[i]);
++    fclose(f);
++}
++
+ static void write_framelog(uint32_t frame)
+ {
+     if (!s_framelog_file) return;
+@@ -2589,6 +2675,8 @@ int main(int argc, char *argv[])
+             hash_on_mode = 1;
+         } else if (strcmp(argv[i], "--input-script") == 0 && i + 1 < argc) {
+             input_script_path = argv[++i];
++        } else if (strcmp(argv[i], "--autoshot-dir") == 0 && i + 1 < argc) {
++            s_autoshot_dir = argv[++i];
+         } else if (strcmp(argv[i], "--exec-coverage-out") == 0 && i + 1 < argc) {
+             exec_cov_out = argv[++i];
+         } else if (strcmp(argv[i], "--yield-log") == 0) {
+@@ -3873,6 +3961,8 @@ session_begin:;
+ 
+ 
+         /* --framelog: works in ALL build modes */
++        dsh_autoshot(frame_num);
++        dsh_blockring_dump(frame_num);
+         write_framelog(frame_num);
+ 
+         /* [SND-TRACE] headless auto-dump: when --snd-dump-frame N is set, dump
