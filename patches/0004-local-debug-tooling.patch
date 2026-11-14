@@ -1,13 +1,5 @@
-git.exe : warning: in the working copy of 'runner/cosim.c', LF will be replaced by CRLF the next time Git touches it
-At line:3 char:1
-+ & git -C $fw diff -- runner/main.c runner/cosim.c 2>&1 | Out-File -En ...
-+ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: (warning: in the... Git touches it:String) [], RemoteException
-    + FullyQualifiedErrorId : NativeCommandError
- 
-warning: in the working copy of 'runner/main.c', LF will be replaced by CRLF the next time Git touches it
 diff --git a/runner/cosim.c b/runner/cosim.c
-index 618a9bd..8bdfa77 100644
+index 618a9bd..5044bc0 100644
 --- a/runner/cosim.c
 +++ b/runner/cosim.c
 @@ -11,6 +11,9 @@
@@ -20,11 +12,26 @@ index 618a9bd..8bdfa77 100644
  #include "include/genesis_runtime.h"   /* g_cpu, g_cosim_cycle/next_cp, proto */
  /* The timingfields/vdpfields drill commands + the full-state hash read the own-
   * backend globals (g_machine/GVDP), which don't exist in the oracle build. */
-@@ -251,6 +254,13 @@ static void handle(sock_t c, char *line) {
+@@ -251,6 +254,28 @@ static void handle(sock_t c, char *line) {
              off += snprintf(out+off, sizeof out-off, " a%d %08x", i, g_cpu.A[i]);
          off += snprintf(out+off, sizeof out-off, "\n");
          send_str(c, out);
-+        } else if (!strncmp(line, "pad ", 4)) {
++        } else if (!strncmp(line, "mem ", 4)) {
++        unsigned addr = 0, len = 0;
++        if (sscanf(line + 4, "%x %x", &addr, &len) == 2 && len <= 0x10000u) {
++            extern uint8_t g_ram[0x10000];
++            int off = 0;
++            for (unsigned i = 0; i < len; i++) {
++                off += snprintf(out + off, sizeof out - off, "%02x",
++                                g_ram[(addr + i) & 0xFFFFu]);
++                if (off > (int)sizeof out - 8) break;
++            }
++            snprintf(out + off, sizeof out - off, "\n");
++            send_str(c, out);
++        } else {
++            send_str(c, "err\n");
++        }
++    } else if (!strncmp(line, "pad ", 4)) {
 +        unsigned v = 0;
 +        if (sscanf(line + 4, "%x", &v) == 1)
 +            cosim_set_pad_override((unsigned)v, 1);
@@ -34,7 +41,7 @@ index 618a9bd..8bdfa77 100644
      } else if (!strncmp(line, "inject ram ", 11)) {
          unsigned addr, xorv;
          if (sscanf(line + 11, "%x %x", &addr, &xorv) == 2)
-@@ -431,3 +441,19 @@ void cosim_init(void) {
+@@ -431,3 +456,19 @@ void cosim_init(void) {
      fprintf(stderr, "[COSIM] listening on 127.0.0.1:%u  stride=%llu\n",
              port, (unsigned long long)s_stride);
  }

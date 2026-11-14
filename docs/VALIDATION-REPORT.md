@@ -435,3 +435,22 @@ PSG 8182, PSG was 0 before the audio work.
 Open: after firing in the room, ammo depletes but the shot animation does not play
 and the muzzle-flash sprite stays on screen; a second trigger pull has no effect
 (`scripts/route-fire.input` reproduces it - frames f1..f3 are byte-identical).
+
+### Shooting: recompiled code matches the interpreter
+
+Driving both backends through check-out and then a trigger pull with injected pad
+input (`pad <hex>`, same checkpoint both sides): the first differing checkpoint is
+one frame after the shot, and two frames later **all 64 KB of work RAM are
+identical** (checked region by region). Registers (A7, D0, D1, SR) are identical
+too. So the shot itself is reproduced faithfully; the "stuck muzzle sprite / no
+animation" is not a recompiled-vs-interpreter divergence.
+
+Comparing screenshots from scripted runs of the two backends is not a valid check
+here: the interpreter executes at a different rate, so the same script directive
+lands on a different game frame and every pair differs (27-43 mean abs diff) even
+in the room before firing.
+
+Next reference needed: an external emulator capture of the same action. The open
+question is whether the sprite that persists is the aiming reticle (which stays
+until the cursor moves) rather than a muzzle flash - that would make it game
+behaviour, not a port defect.
