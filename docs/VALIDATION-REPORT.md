@@ -403,6 +403,18 @@ Current build is the validated one: framebuffer `0x06B5...` / `0x11C1...` /
 `0x876D...` at frames 3000/6000/12000, no watchdog, FM peak 7395, PSG peak 8182.
 The check-out defect remains open with the cause identified above.
 
+A third attempt derived the consumed slots from the emulated A7 itself
+(`(g_cpu.A[7] - _esp_at_entry) / 4` at the rts, no opcode heuristics). It also
+regressed boot: the run froze at the logo (`0x635CB0B6`) because enough ordinary
+functions leave A7 above their entry value that spurious unwinds fire.
+
+Conclusion: the capture cannot be classified by opcode shape, pop width or a
+static proof - the three heuristics tried all fail in one direction or the other.
+The correct place is the indirect call site (`$C436`'s `jsr (a0)`), which knows
+the pushed slot address and can compare A7 after the call to decide how many
+frames to unwind. That is the next thing to implement; the build below is the
+validated one, with check-out still broken.
+
 Tooling built for this investigation and kept: `--pad <hex>`,
 `cosim_set_pad_override` in `cosim.c` (deterministic input for both backends),
 `scripts/route-user*.input`, and the reverse-debug build wiring
