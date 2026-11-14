@@ -1,5 +1,11 @@
 # Shadowrun (Sega Genesis) — native PC port
 
+> **⚠ WORK IN PROGRESS - NOT PLAYABLE.** This is a research port, not a finished
+> game: it boots, renders and plays audio, but known defects break combat and the
+> Start menu, and at least one crash is open. See [STATUS.md](STATUS.md) for the
+> current known-issues list.
+
+
 A native Windows port of **Shadowrun** (Sega Genesis, 1994) produced by static
 recompilation: the original 68000 code is translated to C and run against a
 Genesis runtime, so the game executes as native code with no emulator in the
