@@ -354,3 +354,57 @@ yield timing - the most likely reason the bug presents intermittently.
 
 Regression after the change: 12 000 frames, no crash report or watchdog, FM peak
 7395, PSG peak 8182, framebuffer hash advancing throughout.
+
+### Check-out confirm: root cause identified (fix still open)
+
+The hotel terminal's menu loop (`$0CF82`) calls the selected entry through a jump
+table at `$C14C8`:
+
+```
+CFC6  btst.b  #$e,$ffdd22     ; A pressed?
+CFCE  beq     $cfea
+CFD2  lea.l   $c14c8,a0
+CFD8  bsr.w   $c436           ; dispatch
+CFDC  tst.b   $fff0dc
+CFE2  bmi.w   $cffc           ; negative -> leave the terminal
+CFE6  bra.w   $cf4e
+```
+
+`$C436` reads `$FFF0DC`, shifts it left twice and does `jsr (a0)` on the table
+entry. Entry 1 is the Check Out handler at `$DA6A`, whose prompt loop ends with:
+
+```
+DB12  tst.b   $fff0dc        ; 0 = Yes, 1 = No
+DB18  bne     $db24          ; No -> ordinary rts
+DB1C  move.l  (a7)+,d0       ; Yes: pop the handler's return ...
+DB1E  move.l  (a7)+,d0       ; ... and the dispatcher's return
+DB20  move.w  #$ffff,d6      ; signal "checked out"
+DB24  rts                    ; returns past both
+```
+
+**That is a legitimate return capture**: pop two longwords, then `rts` returns to
+the menu loop's caller with `d6 = -1`. Patch 0001 (`patches/0001-return-capture.patch`,
+upstream PR #15) rejects any capture that reaches an `rts` within eight
+instructions, so `$DA6A` is classified as an ordinary call. The pops never unwind
+the two C frames, the terminal re-enters its loop, and choosing Yes returns to
+Hotel Options - exactly the reported symptom.
+
+Two refinements were tried and both were reverted:
+
+* dropping the `rts` rejection from `capture_is_takeover` alone: no effect, because
+  the handler calls into `$C0DA` early, so the static proof never reaches the pop;
+* distinguishing word pops (`$0E34`'s saved-register restores, the leak patch 0002
+  fixed) from longword pops (real return captures) with a separate
+  `_sp_popped_l` counter: the terminal now exits, but the game lands on a black
+  screen, and a plain run then froze on the boot logo - a regression. Reverted to
+  the shipped patch set.
+
+Current build is the validated one: framebuffer `0x06B5...` / `0x11C1...` /
+`0x876D...` at frames 3000/6000/12000, no watchdog, FM peak 7395, PSG peak 8182.
+The check-out defect remains open with the cause identified above.
+
+Tooling built for this investigation and kept: `--pad <hex>`,
+`cosim_set_pad_override` in `cosim.c` (deterministic input for both backends),
+`scripts/route-user*.input`, and the reverse-debug build wiring
+(`GRG_REVERSE_DEBUG=ON` now defines `GEN_REVERSE_DEBUG`/`SONIC_REVERSE_DEBUG` and
+the compat header includes `reverse_debug.h`).

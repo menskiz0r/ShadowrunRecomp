@@ -1,0 +1,111 @@
+WAIT 2100
+PRESS START 6
+WAIT 1400
+PRESS A 6
+WAIT 1600
+PRESS A 6
+WAIT 1600
+PRESS START 6
+WAIT 2200
+PRESS A 6
+WAIT 800
+PRESS A 6
+WAIT 800
+PRESS A 6
+WAIT 800
+PRESS A 6
+WAIT 800
+PRESS A 6
+WAIT 1500
+SCREENSHOT shots/r-menu.png
+PRESS DOWN 6
+WAIT 500
+SCREENSHOT shots/r-cursor.png
+PRESS A 6
+WAIT 900
+SCREENSHOT shots/r-prompt.png
+PRESS UP 6
+WAIT 500
+SCREENSHOT shots/r-yes.png
+PRESS A 6
+WAIT 1
+DUMP_RAM dumps/I01.ram
+WAIT 1
+DUMP_RAM dumps/I02.ram
+WAIT 1
+DUMP_RAM dumps/I03.ram
+WAIT 1
+DUMP_RAM dumps/I04.ram
+WAIT 1
+DUMP_RAM dumps/I05.ram
+WAIT 1
+DUMP_RAM dumps/I06.ram
+WAIT 1
+DUMP_RAM dumps/I07.ram
+WAIT 1
+DUMP_RAM dumps/I08.ram
+WAIT 1
+DUMP_RAM dumps/I09.ram
+WAIT 1
+DUMP_RAM dumps/I10.ram
+WAIT 1
+DUMP_RAM dumps/I11.ram
+WAIT 1
+DUMP_RAM dumps/I12.ram
+WAIT 1
+DUMP_RAM dumps/I13.ram
+WAIT 1
+DUMP_RAM dumps/I14.ram
+WAIT 1
+DUMP_RAM dumps/I15.ram
+WAIT 1
+DUMP_RAM dumps/I16.ram
+WAIT 1
+DUMP_RAM dumps/I17.ram
+WAIT 1
+DUMP_RAM dumps/I18.ram
+WAIT 1
+DUMP_RAM dumps/I19.ram
+WAIT 1
+DUMP_RAM dumps/I20.ram
+WAIT 1
+DUMP_RAM dumps/I21.ram
+WAIT 1
+DUMP_RAM dumps/I22.ram
+WAIT 1
+DUMP_RAM dumps/I23.ram
+WAIT 1
+DUMP_RAM dumps/I24.ram
+WAIT 1
+DUMP_RAM dumps/I25.ram
+WAIT 1
+DUMP_RAM dumps/I26.ram
+WAIT 1
+DUMP_RAM dumps/I27.ram
+WAIT 1
+DUMP_RAM dumps/I28.ram
+WAIT 1
+DUMP_RAM dumps/I29.ram
+WAIT 1
+DUMP_RAM dumps/I30.ram
+WAIT 1
+DUMP_RAM dumps/I31.ram
+WAIT 1
+DUMP_RAM dumps/I32.ram
+WAIT 1
+DUMP_RAM dumps/I33.ram
+WAIT 1
+DUMP_RAM dumps/I34.ram
+WAIT 1
+DUMP_RAM dumps/I35.ram
+WAIT 1
+DUMP_RAM dumps/I36.ram
+WAIT 1
+DUMP_RAM dumps/I37.ram
+WAIT 1
+DUMP_RAM dumps/I38.ram
+WAIT 1
+DUMP_RAM dumps/I39.ram
+WAIT 1
+DUMP_RAM dumps/I40.ram
+EXIT 0

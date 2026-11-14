@@ -109,6 +109,12 @@ add_executable(ShadowrunRecomp
     ${GENERATED_SOURCES}
     "${CMAKE_SOURCE_DIR}/game/${PREFIX}_spec.c")
 
+if(GRG_REVERSE_DEBUG)
+    # The generated code references g_rdb_current_func / rdb_on_block when it is
+    # emitted with --reverse-debug; the runtime symbols live in reverse_debug.c.
+    target_compile_definitions(ShadowrunRecomp PRIVATE GEN_REVERSE_DEBUG=1 SONIC_REVERSE_DEBUG=1)
+endif()
+
 set_target_properties(ShadowrunRecomp PROPERTIES OUTPUT_NAME "ShadowrunRecomp")
 
 target_include_directories(ShadowrunRecomp PRIVATE
@@ -183,6 +189,9 @@ if(SHADOWRUN_BUILD_COSIM)
         INCLUDE_GENERATED_CODE=1 ENABLE_RECOMPILED_CODE=1 OWN_BACKEND=1
         GENESIS_COSIM=1
         SHADOWRUN_BUILD_VERSION="${SHADOWRUN_BUILD_VERSION}")
+    if(GRG_REVERSE_DEBUG)
+        target_compile_definitions(ShadowrunRecomp_cosim PRIVATE GEN_REVERSE_DEBUG=1 SONIC_REVERSE_DEBUG=1)
+    endif()
     target_include_directories(ShadowrunRecomp_cosim PRIVATE
         "${RUNNER_ROOT}" "${RUNNER_ROOT}/include" "${RUNNER_ROOT}/video"
         "${RUNNER_ROOT}/audio" "${RUNNER_ROOT}/external/ymfm/src"
