@@ -1,0 +1,10 @@
+WAIT 2100
+PRESS START 6
+WAIT 1400
+PRESS A 6
+WAIT 1600
+PRESS A 6
+WAIT 6000
+SCREENSHOT shots/intro-end.png
+DUMP_RAM dumps/intro-end.ram
+EXIT 0
