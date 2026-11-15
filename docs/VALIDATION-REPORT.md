@@ -902,3 +902,27 @@ line 86** (`pc 2274 vs 2275`, debt 3 vs 2) and 98% of subsequent lines differ. T
 places the sound defect in Z80 stepping from boot (most likely when and how the Z80
 is released from reset relative to the 68K chunk), not in the YM timer comparison -
 the timer flag flip seen earlier is a downstream symptom.
+
+### 2026-11-16: the Z80 is released from reset on a different line in each backend
+
+With the shared timing model, instrumenting the reset-release point shows:
+
+```
+recompiled   [Z80REL] frame=25 line=86 master=22695120 debt=2
+interpreter  [Z80REL] frame=25 line=82 master=22681440 debt=2
+```
+
+Same frame, four scanlines apart. The Z80 is stepped once per scanline
+(`step_z80(m, Z80_PER_LINE)`), so a bus-request/reset written mid-line only takes
+effect at the next line boundary. Which line that is depends on where the 68K chunk
+ends, and the recompiled blocks and the interpreter yield at different granularity -
+so the Z80 starts running at a different master cycle and its accounting never
+re-aligns (98% of later lines differ).
+
+An attempted fix that advanced the Z80 to the 68K's intra-line position before the
+buswrite had no effect (release stayed at line 86 vs 82, FM unchanged at 383),
+confirming that the line assignment is decided by the 68K chunk, not the Z80 advance.
+
+Real fix (architectural): interleave Z80 stepping with 68K execution at finer
+granularity than one scanline - e.g. advance the Z80 by the same cycles the 68K just
+ran, so a mid-line buswrite is seen at the exact master cycle in both backends.
