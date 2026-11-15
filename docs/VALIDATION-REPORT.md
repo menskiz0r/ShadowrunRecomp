@@ -926,3 +926,13 @@ confirming that the line assignment is decided by the 68K chunk, not the Z80 adv
 Real fix (architectural): interleave Z80 stepping with 68K execution at finer
 granularity than one scanline - e.g. advance the Z80 by the same cycles the 68K just
 ran, so a mid-line buswrite is seen at the exact master cycle in both backends.
+
+### 2026-11-16: syncing the Z80 on bus writes is not sufficient
+
+Calling an intra-line Z80 sync immediately after a bus-request/reset write changed the
+audio (FM peak 6570 -> 6954, first third different) but the music still died
+(mid third 383, interpreter 4226). Reverted.
+
+Conclusion: the Z80's cycle position matters for every access, not just the bus
+control writes, so the fix has to be continuous interleaving - advance the Z80 by the
+cycles the 68K just ran as it runs them - rather than a hook at one register.
