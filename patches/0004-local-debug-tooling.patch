@@ -74,8 +74,72 @@ index 618a9bd..5044bc0 100644
 +    if (bits) *bits = cosim_pad_bits;
 +    return cosim_pad_active;
 +}
+diff --git a/runner/glue.c b/runner/glue.c
+index 9678eef..5afe23c 100644
+--- a/runner/glue.c
++++ b/runner/glue.c
+@@ -439,6 +439,29 @@ int recomp_dispatch_ram_stub(uint32_t addr)
+     return 0;
+ }
+ 
++/* Per-instruction timing trace: pc, cost, cumulative counters. Enabled only when
++ * GENESIS_INSN_TRACE names a file; GENESIS_INSN_TRACE_FROM/_TO bound the frames. */
++void genesis_trace_insn(uint32_t pc, uint32_t cycles)
++{
++    static FILE *f = NULL;
++    static int init = 0;
++    static uint32_t from = 0, to = ~0u;
++    if (!init) {
++        init = 1;
++        const char *p = getenv("GENESIS_INSN_TRACE");
++        if (p && *p) {
++            f = fopen(p, "w");
++            const char *a = getenv("GENESIS_INSN_TRACE_FROM");
++            const char *b = getenv("GENESIS_INSN_TRACE_TO");
++            if (a && *a) from = (uint32_t)strtoul(a, NULL, 0);
++            if (b && *b) to = (uint32_t)strtoul(b, NULL, 0);
++        }
++    }
++    if (!f || g_frame_count < from || g_frame_count > to) return;
++    fprintf(f, "%u %06X %u %u %u\n", (unsigned)g_frame_count, (unsigned)(pc & 0xFFFFFFu),
++            cycles, (unsigned)g_audio_cycle_counter, (unsigned)g_native_insn_count);
++}
++
+ void glue_reset_frame_sync(void)
+ {
+     g_hybrid_cycle_counter = 0;
+diff --git a/runner/include/genesis_runtime.h b/runner/include/genesis_runtime.h
+index ba1174a..48dc78e 100644
+--- a/runner/include/genesis_runtime.h
++++ b/runner/include/genesis_runtime.h
+@@ -250,6 +250,13 @@ static inline int genesis_native_register_span_ready(unsigned cycles,unsigned co
+         2u*GENESIS_NATIVE_WALL_FRAME_CYCLES,b->interleave_active,b->in_vblank_service,
+         b->main_cpu_divisor,b->cycle_budget,b->budget_cyc_seen,cycles,count);
+ }
++/* ---- Per-instruction timing trace (timing diagnosis) --------------------
++ * Emitted by the generator after each instruction's cycle accounting and
++ * mirrored by the interpreter. Cheap no-op unless GENESIS_INSN_TRACE names a
++ * file; the frame window is selected with GENESIS_INSN_TRACE_FROM / _TO. */
++void genesis_trace_insn(uint32_t pc, uint32_t cycles);
++#define GEN_TRACE(pc, n) genesis_trace_insn((uint32_t)(pc), (uint32_t)(n))
++
+ #ifndef GEN_NATIVE_REGISTER_SPAN_READY
+ #define GEN_NATIVE_REGISTER_SPAN_READY(cycles, count) \
+     genesis_native_register_span_ready((cycles), (count))
+diff --git a/runner/m68k_interp.c b/runner/m68k_interp.c
+index 1290d52..34303aa 100644
+--- a/runner/m68k_interp.c
++++ b/runner/m68k_interp.c
+@@ -1312,6 +1312,7 @@ static void interp_account_cycles(const M68KInstr *ins) {
+     g_audio_cycle_counter += (uint32_t)cyc;
+     if (g_cycle_accumulator >= g_vblank_threshold)
+         glue_check_vblank();
++    GEN_TRACE((uint32_t)ins->addr, (uint32_t)cyc);
+     /* Differential co-sim: advance the same monotonic checkpoint axis the
+      * recompiled backend advances via emit_cycle_accounting's GEN_COSIM_TICK,
+      * with the identical per-instruction cost — so both backends park at the
 diff --git a/runner/main.c b/runner/main.c
-index 60a0cce..d75a5e3 100644
+index 60a0cce..adc0864 100644
 --- a/runner/main.c
 +++ b/runner/main.c
 @@ -879,6 +879,7 @@ static int      s_sampling_netplay_local = 0;
@@ -272,3 +336,18 @@ index 60a0cce..d75a5e3 100644
          write_framelog(frame_num);
  
          /* [SND-TRACE] headless auto-dump: when --snd-dump-frame N is set, dump
+@@ -4509,6 +4641,14 @@ session_begin:;
+         return 1;
+     }
+     glue_shutdown();
++    { const char *dd = getenv("GENESIS_AUDIO_DELIVERY_DUMP");
++      if (dd && *dd) {
++          extern int audio_delivery_dump(const char *path);
++          if (audio_delivery_dump(dd) == 0)
++              fprintf(stderr, "[audio] delivery dump written: %s\n", dd);
++          else
++              fprintf(stderr, "[audio] delivery dump failed: %s\n", dd);
++      } }
+     audio_close();
+     shadow_worker_cleanup();
+     genesis_hd_gpu_destroy(hd_gpu);
