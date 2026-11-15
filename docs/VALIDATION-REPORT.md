@@ -526,3 +526,34 @@ skipping the very scene being measured. Evidence: scripted runs currently finish
 So the scripted "skip" is a harness artefact, not the game. Only a live session
 recorded through `scripts/record-session.ps1` is trustworthy for this comparison,
 and its catalog must be built from another live session, not from a scripted one.
+
+### 2026-11-15 (evening): the emulation is deterministic under pacing
+
+Two paced runs (hidden window, dummy audio, 3000 frames, same input) produced
+**identical** guest and audio state:
+
+```
+state_fnv1a64      8AB8A4BDEAB93FF0   8AB8A4BDEAB93FF0
+audio_state_fnv1a64 12DE410E3AB2812F  12DE410E3AB2812F
+```
+
+Only host-side counters differed (cycles measured per frame, audio overflow drops
+39034 vs 65201). So the port does not randomly corrupt its own state: given the
+same input, it is bit-identical run to run.
+
+Consequences for the intermittent sound/skip report:
+
+* The skip cannot come from non-deterministic emulation; it must come from a
+  different *input trajectory* (the player pressing at different moments), or from
+  the live presentation/audio path in a way that does not touch guest state.
+* Automated input is limited to `--input-script`; synthetic keys (`keybd_event`)
+  never reach the runner - proven with `DSH_PAD_LOG`, which recorded zero pad
+  transitions while the driver pressed START/A. Keyboard automation is therefore
+  not available in this environment.
+* Every scripted variation tried (fixed timing, randomised timing, A-mashing,
+  parallel instances, hidden windows) gives the same clean intro: skyline 1329
+  frames, ambush 1602, 9000 frames.
+
+Open next step: reproduce the *interactive* input trajectory on a reference
+emulator and compare (BizHawk showed the same ROM booting but the scripted route
+did not complete in this environment).
