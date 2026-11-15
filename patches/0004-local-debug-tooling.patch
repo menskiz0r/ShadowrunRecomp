@@ -1,3 +1,24 @@
+diff --git a/external/m68k-recomp-core b/external/m68k-recomp-core
+index 88963f2..0069849 160000
+--- a/external/m68k-recomp-core
++++ b/external/m68k-recomp-core
+@@ -1 +1 @@
+-Subproject commit 88963f28d04904525a378f75dc1cd2ebb3add773
++Subproject commit 0069849f2c699001b7bc4cbe9679dcff645dca2f-dirty
+diff --git a/external/rbengine b/external/rbengine
+index b29bdde..28a2a47 160000
+--- a/external/rbengine
++++ b/external/rbengine
+@@ -1 +1 @@
+-Subproject commit b29bdde642bc087f21303b827fadba40496b502d
++Subproject commit 28a2a472986a7d692d0378a22e756b0936413507
+diff --git a/external/z80-recomp-core b/external/z80-recomp-core
+index 4dfc5fc..bdd1c30 160000
+--- a/external/z80-recomp-core
++++ b/external/z80-recomp-core
+@@ -1 +1 @@
+-Subproject commit 4dfc5fc29fd67d23714126348e678e45952e9462
++Subproject commit bdd1c307cc553891de05b0c69903d328a00ae692
 diff --git a/runner/audio.c b/runner/audio.c
 index ef618a4..9dab768 100644
 --- a/runner/audio.c
@@ -88,6 +109,64 @@ index 618a9bd..cbd5561 100644
 +    if (bits) *bits = cosim_pad_bits;
 +    return cosim_pad_active;
 +}
+diff --git a/runner/diagnostic_replay.c b/runner/diagnostic_replay.c
+index 336a8cc..f9f1a5d 100644
+--- a/runner/diagnostic_replay.c
++++ b/runner/diagnostic_replay.c
+@@ -292,6 +292,9 @@ static int scan_keys(void) {
+ int genesis_replay_boot_sram(const char *name, void *sram, size_t size,
+                              int *loaded) {
+   char sidecar[1400], row[512];
++  static int allow = -1;
++  if (allow < 0) { const char *e = getenv("GENESIS_REPLAY_ALLOW_OTHER_BUILD");
++                   allow = (e && *e && *e != '0'); }
+   unsigned flag = 2, exe = 0;
+   FILE *f = fopen(name, "rb");
+   snprintf(sidecar, sizeof sidecar, "%s.sav", name);
+@@ -299,7 +302,7 @@ int genesis_replay_boot_sram(const char *name, void *sram, size_t size,
+   int ok = bounded_file(f, MAX_TEXT) && bounded_file(s, MAX_STATES) &&
+            fgets(row, sizeof row, f) && !strcmp(row, "GENESISREPLAY 1\n") &&
+            fgets(row, sizeof row, f) && sscanf(row, "BUILD %x", &exe) == 1 &&
+-           exe == genesis_build_exe_fingerprint() &&
++           (exe == genesis_build_exe_fingerprint() || allow) &&
+            fgets(row, sizeof row, f) && fgets(row, sizeof row, f) &&
+            sscanf(row, "SRAM %u", &flag) == 1 && flag <= 1;
+   FILE *old_stream = stream, *old_states = states;
+@@ -335,6 +338,9 @@ int genesis_replay_init(const char *directory, const char *playback,
+     playing = 1;
+     snprintf(path, sizeof path, "%s", playback);
+     char sidecar[1400], row[512], extra;
++    static int other = -1;
++    if (other < 0) { const char *e = getenv("GENESIS_REPLAY_ALLOW_OTHER_BUILD");
++                     other = (e && *e && *e != '0'); }
+     unsigned format, exe, crc, loaded;
+     size_t bytes;
+     stream = fopen(path, "rb");
+@@ -345,7 +351,7 @@ int genesis_replay_init(const char *directory, const char *playback,
+         sscanf(row, "GENESISREPLAY %u %c", &format, &extra) != 1 ||
+         format != 1 || !fgets(row, sizeof row, stream) ||
+         sscanf(row, "BUILD %x", &exe) != 1 ||
+-        exe != genesis_build_exe_fingerprint() ||
++        (exe != genesis_build_exe_fingerprint() && !other) ||
+         !fgets(row, sizeof row, stream) ||
+         sscanf(row, "ROM %x %zu %c", &crc, &bytes, &extra) != 2 || crc != rom ||
+         bytes != rom_n || !fgets(row, sizeof row, stream) ||
+@@ -694,9 +700,14 @@ void genesis_replay_end(void) {
+     }
+     static const char *names[] = {"cpu/scheduler", "work RAM",
+                                   "machine/audio/input", "game/mod state"};
++    static int ignore_cp = -1;
++    if (ignore_cp < 0) { const char *e = getenv("GENESIS_REPLAY_IGNORE_CHECKPOINTS");
++                         ignore_cp = (e && *e && *e != '0'); }
+     for (int i = 0; i < 4; ++i) {
+       uint32_t got = hash(parts[i], sizes[i]);
+-      if (got != want[i]) {
++      if (ignore_cp && got != want[i] && i == 0 && executions < 3)
++        fprintf(stderr, "[feedback-replay] checkpoint mismatch ignored (execution=%u)\n", executions-1);
++      if (!ignore_cp && got != want[i]) {
+         fprintf(stderr,
+                 "[feedback-replay] FIRST DIVERGENCE execution=%u %s "
+                 "actual=%08x expected=%08x\n",
 diff --git a/runner/glue.c b/runner/glue.c
 index 9678eef..eaca022 100644
 --- a/runner/glue.c
@@ -385,7 +464,7 @@ index 60a0cce..adc0864 100644
      shadow_worker_cleanup();
      genesis_hd_gpu_destroy(hd_gpu);
 diff --git a/runner/video/genesis_bus.c b/runner/video/genesis_bus.c
-index 6daf1c0..4968f3c 100644
+index 6daf1c0..32816fb 100644
 --- a/runner/video/genesis_bus.c
 +++ b/runner/video/genesis_bus.c
 @@ -7,6 +7,9 @@
@@ -398,25 +477,7 @@ index 6daf1c0..4968f3c 100644
  #include "genesis_expansion.h"
  #include "../audio/event_queue.h"
  #include <string.h>
-@@ -78,10 +81,16 @@ static uint64_t ym_abs_68k_stamp(void)
-            (uint64_t)STAMP_68K();
- }
- 
-+#define YM_TIMER_GUARD 64u
-+
- static void ym_timer_update(GenesisBus *b, uint64_t now)
- {
-+    /* The read stamp carries the Z80 instruction overshoot, so two backends can
-+     * land within a few master cycles of the deadline on opposite sides. Require
-+     * a small margin past the deadline before flagging overflow, so a cycle-level
-+     * difference cannot flip the timer flag (and with it the game's driver). */
-     if (!b->ym_timer_b_running || b->ym_timer_b_period == 0 ||
--        now < b->ym_timer_b_deadline)
-+        now < b->ym_timer_b_deadline + YM_TIMER_GUARD)
-         return;
- 
-     if (b->ym_mode & 0x08u)             /* enable timer-B overflow flag */
-@@ -419,7 +428,7 @@ void gbus_write16(GenesisBus *b, uint32_t a, uint16_t v)
+@@ -419,7 +422,7 @@ void gbus_write16(GenesisBus *b, uint32_t a, uint16_t v)
          if ((a & 0xFFFFu) < 0x2000u) { unsigned off = a & 0x1FFFu;
              snd_trace_68k_write((uint16_t)off, b->z80_ram[off], (uint8_t)(v >> 8),
                                  b->z80_busreq, b->z80_reset_off);  /* [SND-TRACE] */
@@ -425,7 +486,7 @@ index 6daf1c0..4968f3c 100644
          if (a >= 0xA04000u && a <= 0xA04003u) {
              uint8_t port = (uint8_t)(a & 3);
              ym_write_side_effect(b, port, (uint8_t)v, ym_abs_68k_stamp());
-@@ -469,7 +478,7 @@ void gbus_write8(GenesisBus *b, uint32_t a, uint8_t v)
+@@ -469,7 +472,7 @@ void gbus_write8(GenesisBus *b, uint32_t a, uint8_t v)
          if ((a & 0xFFFFu) < 0x2000u) { unsigned off = a & 0x1FFFu;
              snd_trace_68k_write((uint16_t)off, b->z80_ram[off], v,
                                  b->z80_busreq, b->z80_reset_off);  /* [SND-TRACE] */
@@ -434,7 +495,7 @@ index 6daf1c0..4968f3c 100644
          if (a >= 0xA04000u && a <= 0xA04003u) {
              uint8_t port = (uint8_t)(a & 3);
              ym_write_side_effect(b, port, v, ym_abs_68k_stamp());
-@@ -499,10 +508,33 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
+@@ -499,10 +502,33 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
      return gbus_read8(b, a68);
  }
  

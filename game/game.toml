@@ -32,6 +32,10 @@ player_object  = 0x000000
 level_modes    = []
 
 [functions]
+# Computed jumps into the MIDDLE of an existing function (discovered from play:
+# interior_label_misses.toml). Emitted as in-function entry points, never as
+# separate function seeds (that splits the parent).
+late_extra = [0x00B3EE, 0x014E0A, 0x00AC4E, 0x00B49C, 0x00B07E, 0x00B38A]
 # Entry point plus the real handler entry points, and the pad-reader entries the
 # heuristic walk does not reach (the pad-1 path ends with `bra $19D0`, so the
 # pad-2 routine at $199A is a second entry with no direct BSR/JSR anywhere).

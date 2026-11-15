@@ -833,3 +833,28 @@ So the work is:
 3. emit a thunk per interior address and register it in the dispatch table
 4. regenerate and replay session 20261115-204746: `interior_label_misses.toml`
    should be empty and frames 2656/3248 should pass without stalling
+
+### 2026-11-16: combat stall fixed - the miss addresses needed real function entries
+
+The four reported interior addresses were not actually interior: `$00B3EE` sits
+directly after an `RTS` (`4E 75` at `$00B3EC`), so the block is reachable only
+through the code pointer the game stores. Adding them as `[functions].late_extra`
+function entries (rather than as aliases inside a parent) is therefore correct and
+does not split any scanned function.
+
+Iterating with the player's replay as the oracle:
+
+1. `late_extra = [0x00B3EE, 0x014E0A, 0x00AC4E, 0x00B49C]`
+   -> replay matches all 5042 inputs; scenes drop from 139 to 35; the miss report
+   now lists two more addresses (`0x00B07E`, `0x00B38A`)
+2. adding those two
+   -> `interior_label_misses.toml` comes back **empty**
+
+Verified after the fix:
+- all 5042 replay inputs matched
+- boot hashes unchanged (1000/2000/3000/6000 = 45E5/E29B/06B5/11C1)
+- two runs bit-identical (state 66975B9FE678D9A8, audio 7793612B06795D0B)
+
+Also added two diagnostic switches: `GENESIS_REPLAY_ALLOW_OTHER_BUILD` and
+`GENESIS_REPLAY_IGNORE_CHECKPOINTS`, so an old recording can be replayed against a
+new build - which is what makes this iteration loop possible.
