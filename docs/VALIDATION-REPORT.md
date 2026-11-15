@@ -725,3 +725,24 @@ So the chain is:
 Fix direction: make the stamp used for timer comparisons the exact master cycle of
 the access rather than a line-relative value carrying instruction overshoot (or give
 the deadline comparison a small guard band so a few-cycle difference cannot flip it).
+
+### 2026-11-15 (fix): YM timer guard, and what "383" actually means
+
+Patch `0006-ym-timer-guard.patch` requires the YM timer-B deadline comparison to be
+64 master cycles past the deadline before flagging overflow. Result on the cutscene
+skip route (identical inputs both sides):
+
+```
+recompiled before fix : fm last3rd  383  (dead)
+recompiled with fix   : fm last3rd 4822  (alive)
+interpreter           : fm last3rd 2396  (alive)
+```
+
+Validated boot hashes unchanged (frames 1000/2000/3000/6000 = 45E5/E29B/06B5/11C1)
+and two paced runs remain bit-identical (state 366C4771EC6782A2).
+
+Correction worth keeping: `383` is **not** by itself a failure signature. On the full
+9000-frame route both backends end their last third at 383 because that part of the
+route is a quiet scene (interpreter: 383; recompiled: 383). The discriminator is only
+meaningful on a route where the interpreter keeps playing (the skip route), which is
+why earlier comparisons that used the full route were ambiguous.
