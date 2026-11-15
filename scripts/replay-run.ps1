@@ -40,6 +40,7 @@ $env:GENESIS_USER_DIR = $work
 $env:GENESIS_REPLAY_RECORD = '0'
 if ($Interp) { $env:GENESIS_FORCE_INTERP = '1' }
 $env:DSH_HIDDEN = '1'
+$env:GENESIS_AUDIO_PREDRC = Join-Path $work 'audio_'
 $env:SDL_AUDIODRIVER = 'dummy'
 $env:SDL_VIDEODRIVER = 'dummy'
 $env:SDL_RENDER_DRIVER = 'software'
@@ -48,7 +49,7 @@ $p = Start-Process -FilePath $exe -ArgumentList @("`"$rom`"", '--no-launcher', '
       '--hash-frames', '1', '--autodump-ram-dir', "`"$ram`"", '--autodump-ram-every', "$RamEvery", '--autodump-ram-keep', '4000') `
       -PassThru -RedirectStandardOutput $log -RedirectStandardError (Join-Path $work 'replay.err') -WorkingDirectory $work
 $null = $p.WaitForExit(1800000)
-foreach ($k in 'GENESIS_USER_DIR','GENESIS_REPLAY_RECORD','GENESIS_FORCE_INTERP','DSH_HIDDEN','SDL_AUDIODRIVER','SDL_VIDEODRIVER','SDL_RENDER_DRIVER') {
+foreach ($k in 'GENESIS_USER_DIR','GENESIS_REPLAY_RECORD','GENESIS_FORCE_INTERP','GENESIS_AUDIO_PREDRC','DSH_HIDDEN','SDL_AUDIODRIVER','SDL_VIDEODRIVER','SDL_RENDER_DRIVER') {
   Remove-Item ("Env:" + $k) -ErrorAction SilentlyContinue
 }
 $matched = Select-String -Path (Join-Path $work 'replay.err') -Pattern 'executions matched' | Select-Object -First 1

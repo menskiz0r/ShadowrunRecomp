@@ -858,3 +858,23 @@ Verified after the fix:
 Also added two diagnostic switches: `GENESIS_REPLAY_ALLOW_OTHER_BUILD` and
 `GENESIS_REPLAY_IGNORE_CHECKPOINTS`, so an old recording can be replayed against a
 new build - which is what makes this iteration loop possible.
+
+### 2026-11-16: headless oracle for the sound loss
+
+`scripts/replay-run.ps1` now also captures the pre-DRC audio stream, so the sound
+defect can be measured without a live session. Replaying the recorded combat session
+(`sessions/20261115-204746/replay`, 5042 inputs) reproduces it exactly:
+
+```
+recompiled   fm peak=6570  first=6570  mid=383  last=383     <- music dies mid-session
+interpreter  fm peak=7529  first=7529  mid=4382 last=380     <- music survives
+```
+
+Both runs use `GENESIS_REPLAY_ALLOW_OTHER_BUILD=1` and
+`GENESIS_REPLAY_IGNORE_CHECKPOINTS=1` so an older recording can be replayed against a
+new build.
+
+A per-line Z80 log diff over the same replay is not yet usable: the replayed build
+fast-forwards stretches where no input changes (master_cycle jumps ~6 s at step 720)
+while the interpreter steps every line, so the two logs must be aligned by frame
+number. The log currently records only the scanline, not the frame.
