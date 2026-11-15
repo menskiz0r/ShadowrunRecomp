@@ -763,3 +763,24 @@ attachment` when the replay's `.sav` sidecar is the one the recorder copies afte
 the session; the framework's `tools/replay_diagnostic.py` on an untouched
 `build/logs/Shadowrun-feedback.replay` works, so the archived sidecar handling needs
 looking at before replays can be used for verification.
+
+### 2026-11-15 (late): a live session now replays exactly
+
+After fixing the recorder's startup-SRAM archiving, a live 5042-frame session
+replayed with `all 5042 recorded executions matched`. That session is the one where
+the player reported "shooting sprites do not disappear, then shooting breaks, then
+the game hangs":
+
+- FM audio: first third 6570, mid third 383, last third 383 -> the music still dies
+  during the session
+- 139 scenes, two truncated (the cutscene skip plus one more)
+- the emulator kept running to frame 5042 with changing images; no watchdog or crash
+  report was produced, so the "hang" is the game itself stalling rather than the
+  runner
+
+This gives two deterministic regression cases:
+1. the sound loss (`sessions/20261115-204746/replay`)
+2. the combat stall, same replay
+
+Both can be replayed headlessly with `scripts/replay-run.ps1`, which is how any fix
+should be validated from now on - not against a scripted route.
