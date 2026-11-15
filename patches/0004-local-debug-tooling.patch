@@ -75,7 +75,7 @@ index 618a9bd..5044bc0 100644
 +    return cosim_pad_active;
 +}
 diff --git a/runner/main.c b/runner/main.c
-index 60a0cce..5911ef7 100644
+index 60a0cce..d75a5e3 100644
 --- a/runner/main.c
 +++ b/runner/main.c
 @@ -879,6 +879,7 @@ static int      s_sampling_netplay_local = 0;
@@ -86,7 +86,7 @@ index 60a0cce..5911ef7 100644
  
  static cc_bool input_requested_cb(void *user_data,
                                     cc_u8f player_id,
-@@ -1063,6 +1064,14 @@ static void collect_sim_input(GenesisSimInput *in)
+@@ -1063,6 +1064,20 @@ static void collect_sim_input(GenesisSimInput *in)
      for (int p = 2; p < GENESIS_SIM_MAX_PLAYERS; p++)
          if (!input_gameplay_blocked())
              in->pad[p] = (uint16_t)(input_current_mask(p) | input_script_player_mask(p));
@@ -98,10 +98,16 @@ index 60a0cce..5911ef7 100644
 +            in->pad[0] = (uint16_t)ov;
 +    }
 +#endif
++    { static int plog = -1; static unsigned prev = 0;
++      if (plog < 0) { const char *e = getenv("DSH_PAD_LOG"); plog = (e && *e && *e != '0'); }
++      if (plog && in->pad[0] != prev) {
++          fprintf(stderr, "[PAD] frame=%u mask=0x%02X\n", (unsigned)s_current_frame_for_input, (unsigned)in->pad[0]);
++          prev = in->pad[0];
++      } }
      for (int p = 0; p < GENESIS_SIM_MAX_PLAYERS; p++)
          if (input_player_connected(p) || input_script_player_used(p))
              in->human_mask |= 1u << p;
-@@ -1649,10 +1658,33 @@ static int runner_dump_vram_file(const char *path)
+@@ -1649,10 +1664,33 @@ static int runner_dump_vram_file(const char *path)
      return ok;
  }
  
@@ -135,7 +141,7 @@ index 60a0cce..5911ef7 100644
      int ok = png_write_argb(resolved, s_framebuf,
                              s_screen_width, s_screen_height,
                              MAX_SCREEN_WIDTH) == 0;
-@@ -1715,6 +1747,82 @@ static void check_ramdump(void)
+@@ -1715,6 +1753,82 @@ static void check_ramdump(void)
  #endif
  }
  
@@ -218,7 +224,7 @@ index 60a0cce..5911ef7 100644
  static void write_framelog(uint32_t frame)
  {
      if (!s_framelog_file) return;
-@@ -2589,6 +2697,14 @@ int main(int argc, char *argv[])
+@@ -2589,6 +2703,14 @@ int main(int argc, char *argv[])
              hash_on_mode = 1;
          } else if (strcmp(argv[i], "--input-script") == 0 && i + 1 < argc) {
              input_script_path = argv[++i];
@@ -233,7 +239,7 @@ index 60a0cce..5911ef7 100644
          } else if (strcmp(argv[i], "--exec-coverage-out") == 0 && i + 1 < argc) {
              exec_cov_out = argv[++i];
          } else if (strcmp(argv[i], "--yield-log") == 0) {
-@@ -3002,7 +3118,9 @@ int main(int argc, char *argv[])
+@@ -3002,7 +3124,9 @@ int main(int argc, char *argv[])
          win_h = win_w * WS_ASPECT_H / WS_ASPECT_W;   /* true 16:9 */
      }
      /* Scripted launcher tests must stay hidden after the handoff to gameplay. */
@@ -244,7 +250,7 @@ index 60a0cce..5911ef7 100644
      Uint32 win_flags = ((benchmark_frames || test_hidden) ? SDL_WINDOW_HIDDEN : SDL_WINDOW_SHOWN)
                       | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
      /* Launcher tri-state: 1 = borderless (desktop resolution, letterboxed by
-@@ -3793,6 +3911,11 @@ session_begin:;
+@@ -3793,6 +3917,11 @@ session_begin:;
             * every tick; the run must end on the undigested run's machine. */
            if (completed && s_digest_every) { GenesisRbDigest dd; genesis_rb_digest(&dd); }
            FRAME_PHASE(1);
@@ -256,7 +262,7 @@ index 60a0cce..5911ef7 100644
            s_screen_width = game_video_output_width(&s_video_frame, gvdp_active_width(&g_machine.vdp));
            /* Output height doubles in interlace mode 2 (S2 2P split-screen);
             * the existing interlace display modes (tv squash / raw) take over
-@@ -3873,6 +3996,9 @@ session_begin:;
+@@ -3873,6 +4002,9 @@ session_begin:;
  
  
          /* --framelog: works in ALL build modes */

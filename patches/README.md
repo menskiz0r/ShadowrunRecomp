@@ -95,6 +95,12 @@ reproducible:
   checkpoint. This is how the hotel check-out divergence was found; input scripts
   drift between instances and cannot be used for that comparison.
 
+Also carries `DSH_PAD_LOG=1`, which prints every pad-mask transition with its
+frame. It exists because synthetic key injection (`keybd_event`) never reaches the
+runner: three attempts drove the game to press START/A while the pad log recorded
+zero transitions, so those "presses" were going nowhere. Keyboard automation is
+therefore not viable in this environment; only `--input-script` reaches the pads.
+
 Also carries `DSH_HIDDEN=1`, which creates the window hidden so automated runs
 can neither be seen nor closed by accident (a closed window stops the frame loop
 via SDL_QUIT and silently truncates a measurement), and
