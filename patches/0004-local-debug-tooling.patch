@@ -168,7 +168,7 @@ index 336a8cc..f9f1a5d 100644
                  "[feedback-replay] FIRST DIVERGENCE execution=%u %s "
                  "actual=%08x expected=%08x\n",
 diff --git a/runner/glue.c b/runner/glue.c
-index 9678eef..eaca022 100644
+index 9678eef..d014f12 100644
 --- a/runner/glue.c
 +++ b/runner/glue.c
 @@ -439,6 +439,48 @@ int recomp_dispatch_ram_stub(uint32_t addr)
@@ -220,11 +220,78 @@ index 9678eef..eaca022 100644
  void glue_reset_frame_sync(void)
  {
      g_hybrid_cycle_counter = 0;
+@@ -697,6 +739,29 @@ static int     s_game_yielded_break = 0;
+ /* Called from DoCycles (inside Iterate). Runs game code for a chunk. */
+ static cc_u32f s_chunk_cycles = 0;  /* budget for current chunk */
+ 
++/* Why did the 68K chunk return? Logged per chunk when GENESIS_CHUNK_LOG is set,
++ * so two backends can be compared on when they hand the CPU back. */
++extern uint32_t g_snd_frame;
++extern unsigned g_snd_line;
++static void chunk_log(const char *why)
++{
++    static int on = -1;
++    if (on < 0) { const char *e = getenv("GENESIS_CHUNK_LOG"); on = (e && *e && *e != '0'); }
++    if (!on) return;
++    fprintf(stderr, "[CHUNK] f=%u line=%u why=%s budget=%d\n",
++            (unsigned)g_snd_frame, (unsigned)g_snd_line, why, (int)s_cycle_budget);
++    fflush(stderr);
++}
++
++/* Diagnostic: disable the generator's register-span batching at runtime, so the
++ * 68K is charged per instruction exactly like the interpreter. */
++int genesis_spans_disabled(void)
++{
++    static int v = -1;
++    if (v < 0) { const char *e = getenv("GENESIS_NO_SPANS"); v = (e && *e && *e != '0'); }
++    return v;
++}
++
+ void glue_run_game_chunk(uint32_t cycles)
+ {
+     /* Existing adapters qualify their first CPU yield while held. An adapter
+@@ -705,7 +770,7 @@ void glue_run_game_chunk(uint32_t cycles)
+     if (!s_game_running || !s_game_fiber)
+         return;
+     if (s_game_yielded_vblank)
+-        return;
++        { chunk_log("vblank-park"); return; }
+ #if SONIC_REVERSE_DEBUG
+     /* Tier 2: game fiber has parked at a breakpoint. Keep DoCycles
+      * no-opping until Iterate returns to main.c, where rdb_park_drain
+@@ -725,6 +790,7 @@ void glue_run_game_chunk(uint32_t cycles)
+             s_irq_cycle_debt -= (uint32_t)cycles;
+             if (s_irq_cycle_debt == 0)
+                 s_irq_cycle_debt_level = 0;
++            chunk_log("irq-debt");
+             return;
+         }
+         cycles -= s_irq_cycle_debt;
+@@ -747,6 +813,7 @@ void glue_run_game_chunk(uint32_t cycles)
+     s_state_parked=0;
+     fiber_switch(s_game_fiber);
+     instruction_watchdog_reset();
++    chunk_log("yield");
+     s_interleave_active = 0;
+ }
+ 
 diff --git a/runner/include/genesis_runtime.h b/runner/include/genesis_runtime.h
-index ba1174a..48dc78e 100644
+index ba1174a..59dc93a 100644
 --- a/runner/include/genesis_runtime.h
 +++ b/runner/include/genesis_runtime.h
-@@ -250,6 +250,13 @@ static inline int genesis_native_register_span_ready(unsigned cycles,unsigned co
+@@ -236,9 +236,11 @@ void glue_check_vblank(void);
+ extern uint32_t g_audio_cycle_counter;
+ 
+ #include "native_register_budget.h"
++int genesis_spans_disabled(void);
+ static inline int genesis_native_register_span_ready(unsigned cycles,unsigned count)
+ {
+     if(!cycles||!count)return 0;
++    if(genesis_spans_disabled())return 0;
+     uint32_t cycle=g_cycle_accumulator,threshold=g_vblank_threshold;
+     /* No ordinary retirement check runs in this phase. Retain the small
+      * original guard without reading private budget/watchdog state. */
+@@ -250,6 +252,13 @@ static inline int genesis_native_register_span_ready(unsigned cycles,unsigned co
          2u*GENESIS_NATIVE_WALL_FRAME_CYCLES,b->interleave_active,b->in_vblank_service,
          b->main_cpu_divisor,b->cycle_budget,b->budget_cyc_seen,cycles,count);
  }
@@ -239,37 +306,10 @@ index ba1174a..48dc78e 100644
  #define GEN_NATIVE_REGISTER_SPAN_READY(cycles, count) \
      genesis_native_register_span_ready((cycles), (count))
 diff --git a/runner/m68k_interp.c b/runner/m68k_interp.c
-index 1290d52..929f095 100644
+index 1290d52..34303aa 100644
 --- a/runner/m68k_interp.c
 +++ b/runner/m68k_interp.c
-@@ -15,9 +15,7 @@
- #include "m68k_interp.h"
- #include "m68k_decoder.h"   /* recompiler/src — added to the runner include path */
- #include "rom_parser.h"     /* GenesisRom, rom_read* (decoder's fetch source)    */
--#ifdef GENESIS_COSIM
- #include "game_cycles.h"    /* game_insn_cost — clown-measured baked costs        */
--#endif
- 
- #include <stdio.h>
- #include <stdlib.h>
-@@ -1297,14 +1295,9 @@ static int interp_estimate_cycles(const M68KInstr *instr) {
- /* The emit_cycle_accounting() tail, executed after one interpreted instruction. */
- static void interp_account_cycles(const M68KInstr *ins) {
-     int cyc = -1;
--#ifdef GENESIS_COSIM
--    /* Charge the SAME clown-measured cost the recompiled code was stamped with,
--     * so g_audio_cycle_counter converges with the recomp instead of drifting on
--     * a PRM estimate. Falls back to the estimate for addresses not in the table
--     * (RAM-resident code). Gated to the cosim build for now — enabling it in the
--     * shipping floor is a validated pacing change (see game_cycles.h). */
-+    /* Same measured cycle table as the recompiled code (one timing model). */
-     cyc = game_insn_cost(ins->addr);
--#endif
-+
-     if (cyc < 0) cyc = interp_estimate_cycles(ins);
-     if (cyc < 0) cyc = 4;                          /* never stall the clock */
-     g_native_insn_count++;
-@@ -1312,6 +1305,7 @@ static void interp_account_cycles(const M68KInstr *ins) {
+@@ -1312,6 +1312,7 @@ static void interp_account_cycles(const M68KInstr *ins) {
      g_audio_cycle_counter += (uint32_t)cyc;
      if (g_cycle_accumulator >= g_vblank_threshold)
          glue_check_vblank();
@@ -557,7 +597,7 @@ index 6daf1c0..32816fb 100644
      if (addr < 0x6000u) {
          uint8_t port = (uint8_t)(addr & 3);
 diff --git a/runner/video/genesis_machine.c b/runner/video/genesis_machine.c
-index bfbe22d..51eeeac 100644
+index bfbe22d..4d111a0 100644
 --- a/runner/video/genesis_machine.c
 +++ b/runner/video/genesis_machine.c
 @@ -14,6 +14,7 @@
@@ -578,7 +618,7 @@ index bfbe22d..51eeeac 100644
  
  #ifndef GEN_DEV_TRACE
  /* Prod builds: no ring memory, no captures, dumps report "not compiled in".
-@@ -430,6 +432,14 @@ uint32_t machine_z80_stamp(void)
+@@ -430,11 +432,25 @@ uint32_t machine_z80_stamp(void)
  
  static void step_z80(GenesisMachine *m, uint32_t target)
  {
@@ -593,7 +633,18 @@ index bfbe22d..51eeeac 100644
      if (!m->bus.z80_reset_off || m->bus.z80_busreq) return;   /* Z80 halted */
      /* The 68K pulsed the Z80 reset line while halted — restart the core at
       * $0000 now that it's released, so it runs the freshly-uploaded driver
-@@ -464,12 +474,17 @@ static void step_z80(GenesisMachine *m, uint32_t target)
+      * from its entry point (not from a stale, pre-upload PC). */
+     if (m->bus.z80_reset_pending) {
++        { static int rr = -1;
++          if (rr < 0) { const char *e = getenv("GENESIS_Z80_RELEASE"); rr = (e && *e && *e != '0'); }
++          if (rr) { fprintf(stderr, "[Z80REL] frame=%u line=%u master=%u debt=%u\n",
++                            (unsigned)g_snd_frame, (unsigned)g_snd_line,
++                            (unsigned)m->master_cycle, (unsigned)m->z80_cycle_debt);
++                    fflush(stderr); } }
+ #ifdef GENESIS_Z80_RECOMP
+         z80_recomp_reset();
+         z80_recomp_mirror_to_interpreter(&m->z80);
+@@ -464,12 +480,17 @@ static void step_z80(GenesisMachine *m, uint32_t target)
          done+=z80_recomp_step_one();
  #else
          unsigned long c0 = m->z80.cyc;
@@ -611,7 +662,7 @@ index bfbe22d..51eeeac 100644
  #ifdef GEN_DEV_TRACE
      /* [SND-TRACE] V-int acceptance: pending fell 1->0 during this slice. */
      if (g_snd_trace && pend_before &&
-@@ -538,6 +553,7 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+@@ -538,6 +559,7 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
          /* Advance the recompiled 68K ~one scanline (it parks at WaitForVBlank). */
          glue_run_game_chunk(M68K_PER_LINE);
  
@@ -619,7 +670,7 @@ index bfbe22d..51eeeac 100644
          /* If a prior V-int was latched while the 68K had IRQs masked (e.g. a
           * move #$2700,sr screen transition), deliver it now that the chunk above
           * may have dropped the mask — keeps v_vblank_count in step with the
-@@ -548,6 +564,8 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+@@ -548,6 +570,8 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
          /* Step the Z80 (SMPS driver) for its share of the line. */
          step_z80(m, Z80_PER_LINE);
  

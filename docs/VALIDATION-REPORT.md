@@ -936,3 +936,33 @@ audio (FM peak 6570 -> 6954, first third different) but the music still died
 Conclusion: the Z80's cycle position matters for every access, not just the bus
 control writes, so the fix has to be continuous interleaving - advance the Z80 by the
 cycles the 68K just ran as it runs them - rather than a hook at one register.
+
+### 2026-11-16: cheaper hypotheses tested and disproven
+
+Instrumented `glue_run_game_chunk` to log why each chunk returns (frame, scanline,
+yield reason, leftover budget) and compared both backends over the first 60 frames.
+
+At frame 32, line 102 the recompiled build returns with `budget=332` and reports
+`vblank-park` from line 103 onward, while the interpreter keeps yielding with the
+budget exhausted and keeps executing. Initially this looked like a cycle undercount,
+but it is the expected difference: the recompiled code parks at its WaitForVBlank
+fast path, while the forced interpreter runs the wait loop as ordinary instructions.
+Not the bug.
+
+Register-span batching was the next suspect, so a runtime switch was added
+(`GENESIS_NO_SPANS=1` disables `GEN_NATIVE_REGISTER_SPAN_READY`) and the replay was
+re-run with spans off:
+
+```
+spans on : fm 6570/383/383
+spans off: fm 6570/383/383     (interpreter 7437/4226/380)
+```
+
+Identical, so span batching is not the cause either. Also reverted a build change that
+linked the cycle table into the shipping target: the generator only emits
+`generation-stage/<prefix>/<prefix>_cycles.c` for the co-sim configuration, so the
+main target could not compile against it.
+
+Remaining candidate is unchanged: the Z80 is stepped once per scanline, so the phase
+relationship between Z80 execution and 68K writes depends on where the 68K chunk ends.
+The fix is continuous interleaving (advance the Z80 by the cycles the 68K just ran).
