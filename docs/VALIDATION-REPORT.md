@@ -615,3 +615,23 @@ Controlled test for next session: build the co-sim with patch 0002's `rts` gatin
 removed and re-run the trace. If the frame-66 instruction-count difference (8505 vs
 8502) disappears, the patch is the cause and needs a timing-neutral form; if it
 persists, the split is elsewhere and the trace data is already in place to find it.
+
+### 2026-11-15: Z80 RAM diff at the first divergent frame
+
+Added a `z80mem <addr> <len>` command to the co-sim and compared Z80 RAM at frame
+25, the first frame whose `z80` hash differs. Chunks 24-27 ($1800-$1BFF), the SMPS
+driver's data area, differ. Byte-level diff of $1800-$1BFF:
+
+```
+$18FB  recomp=00  interp=FF        (same pattern every $27 bytes through $1ACF)
+$1B1A  recomp=00  interp=18        ; 18 26 42 C9 06 09 - driver bytes
+$1B1F  recomp=00  interp=09
+```
+
+So at frame 25 the recompiled backend's Z80 RAM is still zero in a region the
+interpreter has already filled: the driver upload / init is running at a different
+point relative to the frame boundary, not producing different values.
+
+Caveat: earlier measurements showed z80ram differences that reconverge in bursts,
+so this may be the same transient. The `z80mem` command now exists to check
+convergence byte-for-byte instead of by hash.

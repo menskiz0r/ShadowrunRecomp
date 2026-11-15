@@ -12,7 +12,7 @@ index ef618a4..9dab768 100644
  
      /* Allow SDL to renegotiate the request; the bridge keys off got.freq. */
 diff --git a/runner/cosim.c b/runner/cosim.c
-index 618a9bd..5044bc0 100644
+index 618a9bd..cbd5561 100644
 --- a/runner/cosim.c
 +++ b/runner/cosim.c
 @@ -11,6 +11,9 @@
@@ -25,7 +25,7 @@ index 618a9bd..5044bc0 100644
  #include "include/genesis_runtime.h"   /* g_cpu, g_cosim_cycle/next_cp, proto */
  /* The timingfields/vdpfields drill commands + the full-state hash read the own-
   * backend globals (g_machine/GVDP), which don't exist in the oracle build. */
-@@ -251,6 +254,28 @@ static void handle(sock_t c, char *line) {
+@@ -251,6 +254,42 @@ static void handle(sock_t c, char *line) {
              off += snprintf(out+off, sizeof out-off, " a%d %08x", i, g_cpu.A[i]);
          off += snprintf(out+off, sizeof out-off, "\n");
          send_str(c, out);
@@ -44,6 +44,20 @@ index 618a9bd..5044bc0 100644
 +        } else {
 +            send_str(c, "err\n");
 +        }
++    } else if (!strncmp(line, "z80mem ", 7)) {
++        unsigned addr = 0, len = 0;
++        if (sscanf(line + 7, "%x %x", &addr, &len) == 2 && len <= 0x2000u) {
++            int off = 0;
++            for (unsigned i = 0; i < len; i++) {
++                off += snprintf(out + off, sizeof out - off, "%02x",
++                                g_machine.bus.z80_ram[(addr + i) & 0x1FFFu]);
++                if (off > (int)sizeof out - 8) break;
++            }
++            snprintf(out + off, sizeof out - off, "\n");
++            send_str(c, out);
++        } else {
++            send_str(c, "err\n");
++        }
 +    } else if (!strncmp(line, "pad ", 4)) {
 +        unsigned v = 0;
 +        if (sscanf(line + 4, "%x", &v) == 1)
@@ -54,7 +68,7 @@ index 618a9bd..5044bc0 100644
      } else if (!strncmp(line, "inject ram ", 11)) {
          unsigned addr, xorv;
          if (sscanf(line + 11, "%x %x", &addr, &xorv) == 2)
-@@ -431,3 +456,19 @@ void cosim_init(void) {
+@@ -431,3 +470,19 @@ void cosim_init(void) {
      fprintf(stderr, "[COSIM] listening on 127.0.0.1:%u  stride=%llu\n",
              port, (unsigned long long)s_stride);
  }
@@ -75,41 +89,53 @@ index 618a9bd..5044bc0 100644
 +    return cosim_pad_active;
 +}
 diff --git a/runner/glue.c b/runner/glue.c
-index 9678eef..1ca7f65 100644
+index 9678eef..eaca022 100644
 --- a/runner/glue.c
 +++ b/runner/glue.c
-@@ -439,6 +439,36 @@ int recomp_dispatch_ram_stub(uint32_t addr)
+@@ -439,6 +439,48 @@ int recomp_dispatch_ram_stub(uint32_t addr)
      return 0;
  }
  
 +/* Per-instruction timing trace: pc, cost, cumulative counters. Enabled only when
 + * GENESIS_INSN_TRACE names a file; GENESIS_INSN_TRACE_FROM/_TO bound the frames. */
++#define GEN_TRACE_RING 262144u
++typedef struct { uint32_t pc, cost, acyc; } GenTraceRec;
++static GenTraceRec s_trace_ring[GEN_TRACE_RING];
++static uint32_t s_trace_head = 0, s_trace_total = 0;
++static FILE *s_trace_file = NULL;
++static int s_trace_init = 0, s_trace_dumped = 0;
++static uint32_t s_trace_at_frame = 66;
++
 +void genesis_trace_insn(uint32_t pc, uint32_t cycles)
 +{
-+    static FILE *f = NULL;
-+    static int init = 0, started = 0;
-+    static uint32_t anchor = 0x000BD2u, count = 200000u;
-+    static unsigned long long n = 0;
-+    if (!init) {
-+        init = 1;
++    if (!s_trace_init) {
++        s_trace_init = 1;
 +        const char *p = getenv("GENESIS_INSN_TRACE");
-+        if (p && *p) {
-+            f = fopen(p, "w");
-+            const char *a = getenv("GENESIS_INSN_TRACE_AT");
-+            const char *c2 = getenv("GENESIS_INSN_TRACE_COUNT");
-+            if (a && *a) anchor = (uint32_t)strtoul(a, NULL, 16);
-+            if (c2 && *c2) count = (uint32_t)strtoul(c2, NULL, 10);
++        if (p && *p) s_trace_file = fopen(p, "w");
++        const char *a = getenv("GENESIS_INSN_TRACE_FRAME");
++        if (a && *a) s_trace_at_frame = (uint32_t)strtoul(a, NULL, 10);
++    }
++    if (!s_trace_file) return;
++    /* Ring keeps the most recent instructions; the dump is anchored to a shared
++     * event (reaching frame N), so both backends' dumps end at the same moment
++     * and can be aligned from the tail instead of by frame/window/counter. */
++    GenTraceRec *r = &s_trace_ring[s_trace_head & (GEN_TRACE_RING - 1u)];
++    r->pc = pc & 0xFFFFFFu;
++    r->cost = cycles;
++    r->acyc = (uint32_t)g_audio_cycle_counter;
++    s_trace_head++;
++    if (s_trace_total < GEN_TRACE_RING) s_trace_total++;
++    if (!s_trace_dumped && g_frame_count >= s_trace_at_frame) {
++        uint32_t n = s_trace_total, start = s_trace_head - n;
++        fprintf(s_trace_file, "# frame %u ring %u\n", (unsigned)g_frame_count, n);
++        for (uint32_t k = 0; k < n; k++) {
++            GenTraceRec *q = &s_trace_ring[(start + k) & (GEN_TRACE_RING - 1u)];
++            fprintf(s_trace_file, "%06X %u %u\n", (unsigned)q->pc, q->cost, q->acyc);
 +        }
++        fclose(s_trace_file);
++        s_trace_file = NULL;
++        s_trace_dumped = 1;
 +    }
-+    if (!f) return;
-+    if (!started) {
-+        if (pc != anchor) return;      /* common anchor: same first instruction */
-+        started = 1;
-+    }
-+    if (n >= count) return;
-+    fprintf(f, "%u %06X %u %u %u\n", (unsigned)g_frame_count, (unsigned)(pc & 0xFFFFFFu),
-+            cycles, (unsigned)g_audio_cycle_counter, (unsigned)g_native_insn_count);
-+    n++;
 +}
 +
  void glue_reset_frame_sync(void)
