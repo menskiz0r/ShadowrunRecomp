@@ -635,3 +635,24 @@ point relative to the frame boundary, not producing different values.
 Caveat: earlier measurements showed z80ram differences that reconverge in bursts,
 so this may be the same transient. The `z80mem` command now exists to check
 convergence byte-for-byte instead of by hash.
+
+### 2026-11-15: the two backends run a different number of Z80 line-steps
+
+Added a per-line Z80 stepping log (`GENESIS_Z80_LOG`: line, master cycle, debt in/out,
+PC in/out) and diffed it over 40 frames:
+
+```
+A (recompiled) 3083 step lines
+B (interpreter) 3082 step lines
+```
+
+The logs agree exactly for the first 719 steps (line, master cycle, debt in/out and PC
+all identical), then one backend performs an extra Z80 line step. A full line is 228
+Z80 cycles, so from that point the sound CPU is a line out of phase - which is the
+kind of offset that breaks a driver whose tempo/IRQ handling is line-timed, and
+matches the earlier observation that z80ram differs from frame 25 and that
+z80_debt ends up non-zero after an input burst.
+
+So the defect is not in the Z80 core or the driver data, but in how many times the
+machine steps the Z80 per frame - the count itself differs between the recompiled
+68K backend and the interpreter.
