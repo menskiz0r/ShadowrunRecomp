@@ -504,3 +504,25 @@ cutscene in a future session.
 
 The catalog itself is not committed (it is derived from game imagery); rebuild it
 from any clean session.
+
+### 2026-11-15 (later): the skip detector works, but the scripted baseline is unreliable
+
+`tools/label_session.py` now correctly flags a shortened scene. On a session the
+user reports as broken it said:
+
+```
+TRUNCATED scenes (1):
+  scene 07 expected 1364 frames, got 248
+```
+
+That fix also exposed a flaw in the *baseline*: the catalog's 1364-frame scene came
+from a scripted run, and scripted runs are not comparable. `input_script` advances
+one directive per **wall** frame while the game advances on its own clock, so on a
+slow host the script races ahead and its START press lands during the intro -
+skipping the very scene being measured. Evidence: scripted runs currently finish at
+~1900 game frames instead of the 9000 they asked for, and their skyline scene is
+63-163 frames regardless of whether RAM dumping is enabled.
+
+So the scripted "skip" is a harness artefact, not the game. Only a live session
+recorded through `scripts/record-session.ps1` is trustworthy for this comparison,
+and its catalog must be built from another live session, not from a scripted one.

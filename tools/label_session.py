@@ -83,7 +83,7 @@ def main():
             if tag in ("delete", "replace"):
                 for i in range(i1, i2):
                     c = cat[i]
-                    if not complete and c["start"] + c["len"] > captured_end:
+                    if not complete and c["start"] > captured_end:
                         continue
                     skipped.append((i, c))
             if tag in ("insert", "replace"):
@@ -92,7 +92,7 @@ def main():
             if tag == "equal":
                 for k in range(i2 - i1):
                     c, s = cat[i1 + k], segs[j1 + k]
-                    if not complete and c["start"] + c["len"] > captured_end:
+                    if not complete and c["start"] > captured_end:
                         continue
                     if c["len"] >= 40 and s["len"] < c["len"] * 0.5:
                         short.append((i1 + k, c, s))
