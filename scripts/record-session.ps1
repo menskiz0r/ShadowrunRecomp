@@ -49,6 +49,20 @@ $p = Start-Process -FilePath $exe -ArgumentList $runArgs -PassThru -RedirectStan
 $null = $p.WaitForExit()
 Remove-Item Env:\GENESIS_AUDIO_PREDRC -ErrorAction SilentlyContinue
 
+# Archive the input replay with the session. The runner rotates it, so a bad
+# session's inputs would otherwise be lost - and they are the only way to revisit
+# that exact trajectory (tools/replay_diagnostic.py --headless reproduces them).
+$logDir = Join-Path $Repo 'build\logs'
+$archived = 0
+foreach ($suffix in @('', '.sav', '.config.ini', '.mods.txt')) {
+  $src = Join-Path $logDir ('Shadowrun-feedback.replay' + $suffix)
+  if (Test-Path $src) {
+    Copy-Item $src (Join-Path $out ('replay' + $suffix)) -Force
+    $archived++
+  }
+}
+if ($archived) { Write-Output "  replay archived -> $out\replay" }
+
 if (Test-Path $timeline) {
   Select-String -Path $timeline -Pattern '\[FBHASH\]' -NotMatch | ForEach-Object { $_.Line } |
     Out-File $log -Encoding utf8
