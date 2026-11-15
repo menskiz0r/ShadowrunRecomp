@@ -557,3 +557,32 @@ Consequences for the intermittent sound/skip report:
 Open next step: reproduce the *interactive* input trajectory on a reference
 emulator and compare (BizHawk showed the same ROM booting but the scripted route
 did not complete in this environment).
+
+### 2026-11-15: music death isolated to Z80 timing after an intro skip
+
+Recorded a live session where the player pressed exactly Enter, Z, Z (verified in
+the replay: 0x80 at frame 1342, 0x40 at 1473, 0x40 at 1546). The second A lands as
+the intro starts, which is the game's cutscene skip: the skyline scene ran 60
+frames instead of 1364. Device-side stats from that session: flushes=2733
+dropped=0 underruns=0, so the audio device never starved.
+
+Replaying the same input route on both backends:
+
+```
+recompiled   fm first3rd=6570  mid3rd=3977  last3rd= 383   (music dies)
+interpreter  fm first3rd=7529  mid3rd=3819  last3rd=2396   (music continues)
+```
+
+Co-simulation on the same route: the 68K state hashes agree, but from frame 1565
+onward `z80`, `z80ram` and `fm` differ for every checkpoint (60/60 checks). At that
+frame `master_cycle` is identical (1403198640) while `z80_debt` is 15 in the
+recompiled build and 0 in the interpreter - the sound CPU is clocked 15 master
+cycles behind and never catches up.
+
+Earlier divergence exists but is not yet attributable: the first frame where the
+Z80 subsystem hash differs is 25 (boot), and `cum` first differs at frame 66 by 58
+cycles / 3 instructions. Those early differences were previously observed to
+reconverge; the one that persists starts with the cutscene skip.
+
+Next concrete step: use the co-sim INSN clock drill to compare per-instruction
+cycles inside frames 1546-1565 and name the instruction whose cost differs.
