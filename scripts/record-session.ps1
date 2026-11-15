@@ -65,6 +65,17 @@ while ($sw.Elapsed.TotalSeconds -lt 12) {
   }
   Start-Sleep -Milliseconds 250
 }
+
+# The .sav sidecar is the replay's STARTUP SRAM snapshot. The game rewrites it while
+# running, so it must be archived early or the replay will later fail to load with
+# "invalid startup SRAM attachment". The replay itself is archived after the session.
+$logDir0 = Join-Path $Repo 'build\logs'
+$sw2 = [Diagnostics.Stopwatch]::StartNew()
+while ($sw2.Elapsed.TotalSeconds -lt 8) {
+  $sv = Join-Path $logDir0 'Shadowrun-feedback.replay.sav'
+  if (Test-Path $sv) { Copy-Item $sv (Join-Path $out 'replay.sav') -Force; break }
+  Start-Sleep -Milliseconds 200
+}
 $null = $p.WaitForExit()
 Remove-Item Env:\GENESIS_AUDIO_PREDRC, Env:\DSH_PAD_LOG, Env:\GENESIS_AUDIO_DELIVERY_DUMP -ErrorAction SilentlyContinue
 
