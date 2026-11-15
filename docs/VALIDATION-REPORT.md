@@ -966,3 +966,24 @@ main target could not compile against it.
 Remaining candidate is unchanged: the Z80 is stepped once per scanline, so the phase
 relationship between Z80 execution and 68K writes depends on where the 68K chunk ends.
 The fix is continuous interleaving (advance the Z80 by the cycles the 68K just ran).
+
+### 2026-11-16: slice interleaving tested - not the fix either
+
+Rebuilt the frame loop to interleave the Z80 with the 68K at slice granularity
+(`GENISIS_Z80_SLICES` slices per scanline, each `glue_run_game_chunk(M68K_PER_LINE/n)`
+followed by a cumulative `step_z80`), and measured the replay oracle:
+
+```
+ 8 slices: fm peak 7687  first 7687  mid 383  last 383
+32 slices: fm peak 7864  first 7864  mid 380  last 380
+128 slices: fm peak 7343 first 7343  mid 380  last 380
+```
+
+Finer interleaving does not restore the music and at 32+ slices it dies earlier.
+Reverted to the original once-per-scanline stepping (boot hash 45E5 confirmed).
+
+So the Z80/68K interleaving granularity is not the mechanism either. The remaining
+line of attack is the command stream itself: log every 68K write into Z80 RAM during
+the replay on both backends and compare - if the recompiled 68K sends a different
+sequence (a stop command, or stops sending the per-frame tick) that is the defect,
+and it would be visible as a difference in that stream rather than in timing.

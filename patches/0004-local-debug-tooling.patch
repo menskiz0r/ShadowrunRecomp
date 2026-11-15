@@ -597,7 +597,7 @@ index 6daf1c0..32816fb 100644
      if (addr < 0x6000u) {
          uint8_t port = (uint8_t)(addr & 3);
 diff --git a/runner/video/genesis_machine.c b/runner/video/genesis_machine.c
-index bfbe22d..4d111a0 100644
+index bfbe22d..ba859aa 100644
 --- a/runner/video/genesis_machine.c
 +++ b/runner/video/genesis_machine.c
 @@ -14,6 +14,7 @@
@@ -662,20 +662,12 @@ index bfbe22d..4d111a0 100644
  #ifdef GEN_DEV_TRACE
      /* [SND-TRACE] V-int acceptance: pending fell 1->0 during this slice. */
      if (g_snd_trace && pend_before &&
-@@ -538,6 +559,7 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
-         /* Advance the recompiled 68K ~one scanline (it parks at WaitForVBlank). */
-         glue_run_game_chunk(M68K_PER_LINE);
+@@ -540,7 +561,7 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
  
-+
          /* If a prior V-int was latched while the 68K had IRQs masked (e.g. a
           * move #$2700,sr screen transition), deliver it now that the chunk above
-          * may have dropped the mask — keeps v_vblank_count in step with the
-@@ -548,6 +570,8 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
-         /* Step the Z80 (SMPS driver) for its share of the line. */
-         step_z80(m, Z80_PER_LINE);
- 
-+
-+
-         /* Deliver interrupts to the 68K (and the Z80 at vblank). */
-         if (irq & GVDP_IRQ_VBLANK) {
-             /* Assert the Z80 vblank IRQ and LEAVE it pending — the Z80 takes it
+-         * may have dropped the mask — keeps v_vblank_count in step with the
++         * may have dropped the mask - keeps v_vblank_count in step with the
+          * oracle instead of losing the masked V-int. */
+         glue_own_vint_service_latched(&m->vdp);
+         glue_own_hint_service_latched(&m->vdp);
