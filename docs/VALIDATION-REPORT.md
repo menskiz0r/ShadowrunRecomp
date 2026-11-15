@@ -586,3 +586,32 @@ reconverge; the one that persists starts with the cutscene skip.
 
 Next concrete step: use the co-sim INSN clock drill to compare per-instruction
 cycles inside frames 1546-1565 and name the instruction whose cost differs.
+
+### 2026-11-15: instruction trace localizes the split to a return-capture site
+
+Added a per-instruction trace (GEN_TRACE) and a ring buffer dumped on a shared
+event, so both backends' dumps end at the same instruction. Framing the two dumps
+from the tail gives a 42212-instruction common suffix and places the first split at
+ROM `$000EB2-$000EBE`, which disassembles as:
+
+```
+000EBC  move.l (a7)+, d1
+000EBE  rts
+```
+
+That is exactly the return-capture machinery added by patches 0002/0003, and the
+generated code there reads
+
+```c
+/* $000EBE */
+if (g_split_sp_popped >= 4) { g_rte_pending = g_split_sp_popped / 4; g_split_sp_popped = 0; }
+```
+
+So the leading hypothesis is that the return-slot consumption itself perturbs the
+68K timing in that helper (the co-sim build disables register spans, so spans are
+not the cause of this particular split).
+
+Controlled test for next session: build the co-sim with patch 0002's `rts` gating
+removed and re-run the trace. If the frame-66 instruction-count difference (8505 vs
+8502) disappears, the patch is the cause and needs a timing-neutral form; if it
+persists, the split is elsewhere and the trace data is already in place to find it.
