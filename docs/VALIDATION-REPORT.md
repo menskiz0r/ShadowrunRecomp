@@ -454,3 +454,26 @@ Next reference needed: an external emulator capture of the same action. The open
 question is whether the sprite that persists is the aiming reticle (which stays
 until the cursor moves) rather than a muzzle flash - that would make it game
 behaviour, not a port defect.
+
+### 2026-11-15: automated intro harness - and a correction
+
+Built `scripts/autotest-intro.ps1`: it launches the port N times, randomises the
+frame on which START/A are pressed (human-like timing), records a framebuffer hash
+per frame, and reports a "scene timeline" (runs of an identical frame hash). A
+skipped cutscene shows up as a missing/short segment. `-Analyze <err>` re-parses a
+finished run without launching anything, and uncapped runs make a 7000-frame pass
+take ~30 s instead of 150 s.
+
+Result over two 8-launch batches (seeds 7 and 11): **every completed launch was
+identical - 28 scenes, longest scene 1604-1640 frames**, with the timeline simply
+shifted by the randomised press frames. No skip was reproduced.
+
+Correction worth recording: an intermediate batch reported 9 and 16 scenes for two
+launches, which looked like a reproduction. It was not - those runs were truncated
+because a clean-up step in another command killed the game mid-run. The same
+randomised timings (w=2135/1401/1630) produce 28 scenes when the run is left alone.
+Lesson: never clean up game processes while a measurement batch is running.
+
+So the skip remains a live-session phenomenon that automated, scripted launches do
+not reproduce; the harness is ready for the moment a session can be recorded with
+`scripts/record-session.ps1` (per-frame timeline + RAM ring + input replay).
