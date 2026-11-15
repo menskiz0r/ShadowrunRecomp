@@ -239,10 +239,37 @@ index ba1174a..48dc78e 100644
  #define GEN_NATIVE_REGISTER_SPAN_READY(cycles, count) \
      genesis_native_register_span_ready((cycles), (count))
 diff --git a/runner/m68k_interp.c b/runner/m68k_interp.c
-index 1290d52..34303aa 100644
+index 1290d52..929f095 100644
 --- a/runner/m68k_interp.c
 +++ b/runner/m68k_interp.c
-@@ -1312,6 +1312,7 @@ static void interp_account_cycles(const M68KInstr *ins) {
+@@ -15,9 +15,7 @@
+ #include "m68k_interp.h"
+ #include "m68k_decoder.h"   /* recompiler/src — added to the runner include path */
+ #include "rom_parser.h"     /* GenesisRom, rom_read* (decoder's fetch source)    */
+-#ifdef GENESIS_COSIM
+ #include "game_cycles.h"    /* game_insn_cost — clown-measured baked costs        */
+-#endif
+ 
+ #include <stdio.h>
+ #include <stdlib.h>
+@@ -1297,14 +1295,9 @@ static int interp_estimate_cycles(const M68KInstr *instr) {
+ /* The emit_cycle_accounting() tail, executed after one interpreted instruction. */
+ static void interp_account_cycles(const M68KInstr *ins) {
+     int cyc = -1;
+-#ifdef GENESIS_COSIM
+-    /* Charge the SAME clown-measured cost the recompiled code was stamped with,
+-     * so g_audio_cycle_counter converges with the recomp instead of drifting on
+-     * a PRM estimate. Falls back to the estimate for addresses not in the table
+-     * (RAM-resident code). Gated to the cosim build for now — enabling it in the
+-     * shipping floor is a validated pacing change (see game_cycles.h). */
++    /* Same measured cycle table as the recompiled code (one timing model). */
+     cyc = game_insn_cost(ins->addr);
+-#endif
++
+     if (cyc < 0) cyc = interp_estimate_cycles(ins);
+     if (cyc < 0) cyc = 4;                          /* never stall the clock */
+     g_native_insn_count++;
+@@ -1312,6 +1305,7 @@ static void interp_account_cycles(const M68KInstr *ins) {
      g_audio_cycle_counter += (uint32_t)cyc;
      if (g_cycle_accumulator >= g_vblank_threshold)
          glue_check_vblank();
@@ -530,7 +557,7 @@ index 6daf1c0..32816fb 100644
      if (addr < 0x6000u) {
          uint8_t port = (uint8_t)(addr & 3);
 diff --git a/runner/video/genesis_machine.c b/runner/video/genesis_machine.c
-index bfbe22d..455ad43 100644
+index bfbe22d..51eeeac 100644
 --- a/runner/video/genesis_machine.c
 +++ b/runner/video/genesis_machine.c
 @@ -14,6 +14,7 @@
@@ -578,7 +605,7 @@ index bfbe22d..455ad43 100644
  #endif
      m->z80_cycle_debt = done - target;
 +    if (zl) {
-+        fprintf(zl, "%u %u %u %u %u %x\n", (unsigned)g_snd_line, (unsigned)m->master_cycle,
++        fprintf(zl, "%u %u %u %u %u %u %x\n", (unsigned)g_snd_frame, (unsigned)g_snd_line, (unsigned)m->master_cycle,
 +                (unsigned)d_in, (unsigned)m->z80_cycle_debt, (unsigned)m->z80.pc, pc0);
 +    }
  #ifdef GEN_DEV_TRACE

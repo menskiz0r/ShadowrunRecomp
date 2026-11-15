@@ -878,3 +878,27 @@ A per-line Z80 log diff over the same replay is not yet usable: the replayed bui
 fast-forwards stretches where no input changes (master_cycle jumps ~6 s at step 720)
 while the interpreter steps every line, so the two logs must be aligned by frame
 number. The log currently records only the scanline, not the frame.
+
+### 2026-11-16: the interpreter now shares the recompiled timing model
+
+The shipping interpreter used PRM cycle estimates while the co-sim used the
+recompiler's measured cost table, so any recompiled-vs-interpreter audio comparison
+was comparing two timing models. Fixed: the main target now also links
+`generation-stage/<prefix>/<prefix>_cycles.c` and `runner/game_cycles.c`, and
+`interp_account_cycles` charges `game_insn_cost()` unconditionally (PRM only as a
+fallback for RAM-resident code).
+
+With one timing model the comparison is fair and the result is unchanged:
+
+```
+recompiled            fm thirds 6570 / 383 / 4382? -> 6570 / 383 / 383   (music dies)
+interpreter (shared)  fm thirds 7437 / 4226 / 380                        (music survives)
+```
+
+Gameplay hashes are unaffected (1000/2000/3000/4000 = 45E5/E29B/06B5/29F9).
+
+Frame-aligned per-line Z80 logs over the same replay now diverge at **frame 25,
+line 86** (`pc 2274 vs 2275`, debt 3 vs 2) and 98% of subsequent lines differ. That
+places the sound defect in Z80 stepping from boot (most likely when and how the Z80
+is released from reset relative to the 68K chunk), not in the YM timer comparison -
+the timer flag flip seen earlier is a downstream symptom.

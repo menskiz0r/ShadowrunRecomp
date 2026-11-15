@@ -104,9 +104,17 @@ include("${RECOMP_ROOT}/cmake/GenesisRecompGenerated.cmake")
 genesisrecomp_add_generated_sources(
     GENERATED_SOURCES "${PREFIX}" "${CMAKE_SOURCE_DIR}/game" "${ROM_NAME}")
 
+# The recompiler's per-instruction cost table is also linked into the shipping
+# target, so the interpreter backend uses the SAME timing model as the recompiled
+# code. Without it the two backends pace differently and cannot be compared.
+set(MAIN_CYCLES "${CMAKE_CURRENT_BINARY_DIR}/generation-stage/${PREFIX}/${PREFIX}_cycles.c")
+set_source_files_properties("${MAIN_CYCLES}" PROPERTIES GENERATED TRUE)
+
 add_executable(ShadowrunRecomp
     ${RUNNER_SOURCES}
     ${GENERATED_SOURCES}
+    "${MAIN_CYCLES}"
+    "${RUNNER_ROOT}/game_cycles.c"
     "${CMAKE_SOURCE_DIR}/game/${PREFIX}_spec.c")
 
 if(GRG_REVERSE_DEBUG)
