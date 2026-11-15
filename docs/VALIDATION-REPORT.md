@@ -656,3 +656,34 @@ z80_debt ends up non-zero after an input burst.
 So the defect is not in the Z80 core or the driver data, but in how many times the
 machine steps the Z80 per frame - the count itself differs between the recompiled
 68K backend and the interpreter.
+
+### 2026-11-15 (late): the single differing byte is on the Z80 stack
+
+Added a write watchpoint (`GENESIS_Z80_WATCH=<hex offset>`) covering both the Z80
+and the 68K side of Z80 RAM. Watching `$1B14` over the skip route: both backends
+write it 4854 times through an identical instruction sequence, and only the last
+write differs:
+
+```
+A (recompiled)   pc=02BD  val=BB
+B (interpreter)  pc=02BB  val=BD
+```
+
+`$1B14` is inside the Z80 stack, and the value is a pushed pointer/return address
+whose low byte differs by 2 - the same 2-byte offset as the diverging PCs. So the
+one differing byte is a *symptom*: the Z80 follows a slightly different control
+path (a pushed address 02BB vs 02BD), not a corrupted driver variable.
+
+Disassembly of the uploaded driver around there:
+
+```
+02A4  CD B7 02   CALL $02B7
+02B7  C9         RET
+02B8  26 36      LD H,$36
+02BA  27         DAA
+02BB  CB 46      BIT 0,(HL)
+02BD  CA BB 02   JP Z,$02BB
+```
+
+Next: find which Z80 branch produces the 02BB/02BD difference - the stack word tells
+us the two paths, and the driver disassembly above is the region to read.

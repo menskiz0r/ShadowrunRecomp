@@ -384,8 +384,74 @@ index 60a0cce..adc0864 100644
      audio_close();
      shadow_worker_cleanup();
      genesis_hd_gpu_destroy(hd_gpu);
+diff --git a/runner/video/genesis_bus.c b/runner/video/genesis_bus.c
+index 6daf1c0..32816fb 100644
+--- a/runner/video/genesis_bus.c
++++ b/runner/video/genesis_bus.c
+@@ -7,6 +7,9 @@
+  * genesis_machine.c).
+  */
+ #include "genesis_bus.h"
++void gbus_68k_z80ram(unsigned off, uint8_t val);
++#include <stdio.h>
++#include <stdlib.h>
+ #include "genesis_expansion.h"
+ #include "../audio/event_queue.h"
+ #include <string.h>
+@@ -419,7 +422,7 @@ void gbus_write16(GenesisBus *b, uint32_t a, uint16_t v)
+         if ((a & 0xFFFFu) < 0x2000u) { unsigned off = a & 0x1FFFu;
+             snd_trace_68k_write((uint16_t)off, b->z80_ram[off], (uint8_t)(v >> 8),
+                                 b->z80_busreq, b->z80_reset_off);  /* [SND-TRACE] */
+-            b->z80_ram[off] = (uint8_t)(v >> 8); return; }
++            gbus_68k_z80ram(off, (uint8_t)(v >> 8)); b->z80_ram[off] = (uint8_t)(v >> 8); return; }
+         if (a >= 0xA04000u && a <= 0xA04003u) {
+             uint8_t port = (uint8_t)(a & 3);
+             ym_write_side_effect(b, port, (uint8_t)v, ym_abs_68k_stamp());
+@@ -469,7 +472,7 @@ void gbus_write8(GenesisBus *b, uint32_t a, uint8_t v)
+         if ((a & 0xFFFFu) < 0x2000u) { unsigned off = a & 0x1FFFu;
+             snd_trace_68k_write((uint16_t)off, b->z80_ram[off], v,
+                                 b->z80_busreq, b->z80_reset_off);  /* [SND-TRACE] */
+-            b->z80_ram[off] = v; return; }
++            gbus_68k_z80ram(off, v); b->z80_ram[off] = v; return; }
+         if (a >= 0xA04000u && a <= 0xA04003u) {
+             uint8_t port = (uint8_t)(a & 3);
+             ym_write_side_effect(b, port, v, ym_abs_68k_stamp());
+@@ -499,10 +502,33 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
+     return gbus_read8(b, a68);
+ }
+ 
++
++/* Watchpoint helper for 68K-side writes into Z80 RAM (the driver upload and
++ * mailbox path). Enabled with GENESIS_Z80_WATCH=<hex offset>. */
++void gbus_68k_z80ram(unsigned off, uint8_t val)
++{
++    static int w = -2;
++    extern uint16_t g_z80_pc_now;
++    if (w == -2) { const char *e = getenv("GENESIS_Z80_WATCH"); w = e ? (int)strtoul(e, NULL, 16) : -1; }
++    if (w >= 0 && (int)off == w) {
++        fprintf(stderr, "[Z80W68K] frame=%u off=%04X val=%02X\n", (unsigned)g_snd_frame, off, val);
++        fflush(stderr);
++    }
++    (void)g_z80_pc_now;
++}
++
+ void gbus_z80_write(GenesisBus *b, uint16_t addr, uint8_t val)
+ {
+     if (addr < 0x4000u) { unsigned off = addr & 0x1FFFu;
+         if (g_sndwatch[off]) snd_trace_z80((uint16_t)off, val, 1);  /* [SND-TRACE] */
++        { extern uint16_t g_z80_pc_now;
++          static int w = -2;
++          if (w == -2) { const char *e = getenv("GENESIS_Z80_WATCH"); w = e ? (int)strtoul(e, NULL, 16) : -1; }
++          if (w >= 0 && (int)off == w) {
++              fprintf(stderr, "[Z80W] frame=%u pc=%04X addr=%04X val=%02X\n",
++                      (unsigned)g_snd_frame, (unsigned)g_z80_pc_now, off, val);
++              fflush(stderr);
++          } }
+         b->z80_ram[off] = val; return; }                           /* RAM+mirror */
+     if (addr < 0x6000u) {
+         uint8_t port = (uint8_t)(addr & 3);
 diff --git a/runner/video/genesis_machine.c b/runner/video/genesis_machine.c
-index bfbe22d..3bcdd5d 100644
+index bfbe22d..455ad43 100644
 --- a/runner/video/genesis_machine.c
 +++ b/runner/video/genesis_machine.c
 @@ -14,6 +14,7 @@
@@ -396,7 +462,17 @@ index bfbe22d..3bcdd5d 100644
  #include <stdio.h>   /* [SND-TRACE] temporary sound-command lifecycle trace */
  
  GenesisMachine g_machine;
-@@ -430,6 +431,14 @@ uint32_t machine_z80_stamp(void)
+@@ -29,7 +30,8 @@ GenesisMachine g_machine;
+ /* g_snd_trace / g_snd_frame / g_snd_line now live in the shared chip_trace.c
+  * (so the oracle build has them too). This scheduler still owns/advances
+  * g_snd_frame + g_snd_line per scanline below. */
+-uint8_t       g_sndwatch[0x2000];    /* 1 = a gameplay 68K write touched this  */
++uint8_t       g_sndwatch[0x2000];
++uint16_t      g_z80_pc_now = 0;   /* PC of the Z80 instruction being executed */    /* 1 = a gameplay 68K write touched this  */
+ 
+ #ifndef GEN_DEV_TRACE
+ /* Prod builds: no ring memory, no captures, dumps report "not compiled in".
+@@ -430,6 +432,14 @@ uint32_t machine_z80_stamp(void)
  
  static void step_z80(GenesisMachine *m, uint32_t target)
  {
@@ -411,7 +487,14 @@ index bfbe22d..3bcdd5d 100644
      if (!m->bus.z80_reset_off || m->bus.z80_busreq) return;   /* Z80 halted */
      /* The 68K pulsed the Z80 reset line while halted — restart the core at
       * $0000 now that it's released, so it runs the freshly-uploaded driver
-@@ -470,6 +479,10 @@ static void step_z80(GenesisMachine *m, uint32_t target)
+@@ -464,12 +474,17 @@ static void step_z80(GenesisMachine *m, uint32_t target)
+         done+=z80_recomp_step_one();
+ #else
+         unsigned long c0 = m->z80.cyc;
++        g_z80_pc_now = (uint16_t)m->z80.pc;
+         z80_step(&m->z80);     /* one instruction, then interrupt processing */
+         done += (uint32_t)(m->z80.cyc - c0);
+ #endif
      }
  #endif
      m->z80_cycle_debt = done - target;
@@ -422,7 +505,7 @@ index bfbe22d..3bcdd5d 100644
  #ifdef GEN_DEV_TRACE
      /* [SND-TRACE] V-int acceptance: pending fell 1->0 during this slice. */
      if (g_snd_trace && pend_before &&
-@@ -538,6 +551,7 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+@@ -538,6 +553,7 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
          /* Advance the recompiled 68K ~one scanline (it parks at WaitForVBlank). */
          glue_run_game_chunk(M68K_PER_LINE);
  
@@ -430,7 +513,7 @@ index bfbe22d..3bcdd5d 100644
          /* If a prior V-int was latched while the 68K had IRQs masked (e.g. a
           * move #$2700,sr screen transition), deliver it now that the chunk above
           * may have dropped the mask — keeps v_vblank_count in step with the
-@@ -548,6 +562,8 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+@@ -548,6 +564,8 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
          /* Step the Z80 (SMPS driver) for its share of the line. */
          step_z80(m, Z80_PER_LINE);
  
