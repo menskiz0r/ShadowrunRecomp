@@ -45,3 +45,11 @@ Last updated: 2026-11-14.
 | Save/load on the SDL build | loading verified; an in-game write has not been reproduced on this build |
 | Widescreen / netplay | not attempted |
 
+### Combat / shooting (fixed 2026-11-16)
+
+Shooting stalled because the game jumps through stored code pointers to blocks that
+no scanned function covered (`$00B3EE` follows an `RTS` at `$00B3EC`). Those blocks,
+plus two more found after the first fix (`$00B07E`, `$00B38A`), are now emitted as
+function entries via `[functions].late_extra`. Validated against the recorded
+5042-frame combat session: all inputs replay, `interior_label_misses.toml` is empty,
+scenes drop from 139 to 35, and the boot hashes are unchanged.
