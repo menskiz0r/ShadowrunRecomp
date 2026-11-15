@@ -809,3 +809,27 @@ Fix: in-function entry points. For each listed address the generator should emit
 code already uses labels for branches), plus a thunk registered in the dispatch
 table, leaving the plain `func_XXXX()` wrapper untouched. Seeding them as functions
 is not an option (it splits the parent and previously broke audio + crashed).
+
+### 2026-11-16: interior entries - what the generator already has and what is missing
+
+Findings from reading the generator:
+
+- multi-entry functions already exist: when a function is an alias host the codegen
+  emits `void func_XXXX(uint32_t _entry)` with `switch (_entry) { case 0xADDR: goto
+  label_ADDR; ... }`, so the runtime shape for the fix is already there
+- `[functions] function_aliases = true` only applies *branch-proven* aliases
+  ("Entry ownership audit: 26 branch-proven alias candidates"), and enabling it did
+  **not** produce labels for 0x00B3EE/0x014E0A/0x00AC4E/0x00B49C, because those are
+  reached by computed jumps, not branches
+- the only address configs are `[functions].extra` / `extra_seeds` (seeding splits
+  parents - previously broke audio and crashed)
+
+So the work is:
+
+1. add `[functions] interior_entries = [0x00B3EE, 0x014E0A, 0x00AC4E, 0x00B49C]`
+   to `GameConfig` (recompiler/src/game_config.c, alongside `extra_funcs`)
+2. in code_generator.c force `label_<addr>:;` for listed addresses even when they
+   are not branch targets, and force the alias-host form for their owner functions
+3. emit a thunk per interior address and register it in the dispatch table
+4. regenerate and replay session 20261115-204746: `interior_label_misses.toml`
+   should be empty and frames 2656/3248 should pass without stalling
