@@ -687,3 +687,41 @@ Disassembly of the uploaded driver around there:
 
 Next: find which Z80 branch produces the 02BB/02BD difference - the stack word tells
 us the two paths, and the driver disassembly above is the region to read.
+
+### 2026-11-15 (final for the night): causal chain identified
+
+`machine_z80_stamp()` returns `s_line_base + s_z80_off`, and the YM2612 status
+read serves its timer flags with `ym_abs_z80_stamp()` built from that value:
+
+```c
+static uint64_t ym_abs_z80_stamp(void) {
+    return (uint64_t)g_snd_frame * MASTER_CYCLES_PER_FRAME + (uint64_t)machine_z80_stamp();
+}
+static void ym_timer_update(GenesisBus *b, uint64_t now) {
+    if (!b->ym_timer_b_running || b->ym_timer_b_period == 0 || now < b->ym_timer_b_deadline)
+        return;
+    b->ym_status |= 0x02u;      /* timer-B overflow flag */
+    ...
+}
+```
+
+`s_z80_off` is set per Z80 instruction as `done * MASTER_PER_Z80`, so it carries the
+Z80's overshoot within the line. After the cutscene skip the two backends reach the
+same driver instruction with slightly different `done` (the earlier measurement:
+instruction counts 3083 vs 3082 over 40 frames), which shifts `now` by a few master
+cycles. When a read lands within that window of a timer deadline, `now < deadline`
+flips, the overflow flag flips, and the driver takes the other branch - which is
+exactly the 02BB/02BD difference seen on the Z80 stack, followed by the music
+stopping.
+
+So the chain is:
+
+1. 68K chunk / Z80 step interleaving differs by a few cycles between backends
+2. `s_z80_off` (and the carried debt) differs at the same driver instruction
+3. the YM timer-B deadline comparison flips
+4. the SMPS driver branches differently (02BB vs 02BD)
+5. FM music stops; the device still receives samples (0 underruns)
+
+Fix direction: make the stamp used for timer comparisons the exact master cycle of
+the access rather than a line-relative value carrying instruction overshoot (or give
+the deadline comparison a small guard band so a few-cycle difference cannot flip it).
