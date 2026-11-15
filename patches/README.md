@@ -95,7 +95,10 @@ reproducible:
   checkpoint. This is how the hotel check-out divergence was found; input scripts
   drift between instances and cannot be used for that comparison.
 
-Also carries `GENESIS_AUDIO_SAMPLES=<256..16384>`, an override for the SDL device
+Also carries `DSH_HIDDEN=1`, which creates the window hidden so automated runs
+can neither be seen nor closed by accident (a closed window stops the frame loop
+via SDL_QUIT and silently truncates a measurement), and
+`GENESIS_AUDIO_SAMPLES=<256..16384>`, an override for the SDL device
 buffer size (default 1024), used while investigating the live-audio failure.
 
 Neither change affects emulation: they only read `s_framebuf`, write files, or

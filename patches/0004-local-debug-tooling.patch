@@ -75,7 +75,7 @@ index 618a9bd..5044bc0 100644
 +    return cosim_pad_active;
 +}
 diff --git a/runner/main.c b/runner/main.c
-index 60a0cce..0507c6d 100644
+index 60a0cce..5911ef7 100644
 --- a/runner/main.c
 +++ b/runner/main.c
 @@ -879,6 +879,7 @@ static int      s_sampling_netplay_local = 0;
@@ -233,7 +233,30 @@ index 60a0cce..0507c6d 100644
          } else if (strcmp(argv[i], "--exec-coverage-out") == 0 && i + 1 < argc) {
              exec_cov_out = argv[++i];
          } else if (strcmp(argv[i], "--yield-log") == 0) {
-@@ -3873,6 +3989,9 @@ session_begin:;
+@@ -3002,7 +3118,9 @@ int main(int argc, char *argv[])
+         win_h = win_w * WS_ASPECT_H / WS_ASPECT_W;   /* true 16:9 */
+     }
+     /* Scripted launcher tests must stay hidden after the handoff to gameplay. */
+-    int test_hidden = getenv("LNG_SCRIPT") && getenv("LNG_TEST_HIDDEN");
++    int test_hidden = (getenv("LNG_SCRIPT") && getenv("LNG_TEST_HIDDEN"));
++    { const char *h = getenv("DSH_HIDDEN");
++      if (h && *h && *h != '0') test_hidden = 1; }
+     Uint32 win_flags = ((benchmark_frames || test_hidden) ? SDL_WINDOW_HIDDEN : SDL_WINDOW_SHOWN)
+                      | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
+     /* Launcher tri-state: 1 = borderless (desktop resolution, letterboxed by
+@@ -3793,6 +3911,11 @@ session_begin:;
+            * every tick; the run must end on the undigested run's machine. */
+           if (completed && s_digest_every) { GenesisRbDigest dd; genesis_rb_digest(&dd); }
+           FRAME_PHASE(1);
++          { static int jit = -1;
++            if (jit < 0) { const char *e = getenv("GENESIS_FRAME_JITTER_US");
++                           jit = (e && *e) ? atoi(e) : 0; if (jit < 0) jit = 0; }
++            if (jit > 0) SDL_Delay((Uint32)jit / 1000u ? (Uint32)(jit / 1000u) : 0),
++                          (jit > 0 && jit < 1000) ? (void)SDL_Delay(0) : (void)0; }
+           s_screen_width = game_video_output_width(&s_video_frame, gvdp_active_width(&g_machine.vdp));
+           /* Output height doubles in interlace mode 2 (S2 2P split-screen);
+            * the existing interlace display modes (tv squash / raw) take over
+@@ -3873,6 +3996,9 @@ session_begin:;
  
  
          /* --framelog: works in ALL build modes */
