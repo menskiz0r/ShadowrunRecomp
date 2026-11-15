@@ -44,10 +44,29 @@ Write-Output "session: $stamp"
 Write-Output "  timeline -> $timeline"
 Write-Output "  ram ring -> $ram"
 
+$env:DSH_PAD_LOG = '1'
+$env:GENESIS_AUDIO_DELIVERY_DUMP = Join-Path $out 'delivery.txt'
 $env:GENESIS_AUDIO_PREDRC = Join-Path $out 'audio_'
 $p = Start-Process -FilePath $exe -ArgumentList $runArgs -PassThru -RedirectStandardError $timeline
+
+# Hold the game window in the foreground for the first seconds, so the first keys
+# the player presses actually reach the game (a key sent while the console has
+# focus is silently lost, which drops START and leaves the game in attract mode).
+$cs = @('using System;','using System.Runtime.InteropServices;','public class FocusWin {','  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);','  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);','}') -join "`n"
+try { Add-Type -TypeDefinition $cs -ErrorAction Stop } catch {}
+$sw = [Diagnostics.Stopwatch]::StartNew()
+while ($sw.Elapsed.TotalSeconds -lt 12) {
+  $null = $p.Refresh()
+  if ($p.HasExited) { break }
+  $h = $p.MainWindowHandle
+  if ($h -ne [IntPtr]::Zero) {
+    [FocusWin]::ShowWindow($h, 9) | Out-Null
+    [FocusWin]::SetForegroundWindow($h) | Out-Null
+  }
+  Start-Sleep -Milliseconds 250
+}
 $null = $p.WaitForExit()
-Remove-Item Env:\GENESIS_AUDIO_PREDRC -ErrorAction SilentlyContinue
+Remove-Item Env:\GENESIS_AUDIO_PREDRC, Env:\DSH_PAD_LOG, Env:\GENESIS_AUDIO_DELIVERY_DUMP -ErrorAction SilentlyContinue
 
 # Archive the input replay with the session. The runner rotates it, so a bad
 # session's inputs would otherwise be lost - and they are the only way to revisit

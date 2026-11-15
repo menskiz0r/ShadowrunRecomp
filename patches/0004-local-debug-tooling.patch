@@ -385,7 +385,7 @@ index 60a0cce..adc0864 100644
      shadow_worker_cleanup();
      genesis_hd_gpu_destroy(hd_gpu);
 diff --git a/runner/video/genesis_bus.c b/runner/video/genesis_bus.c
-index 6daf1c0..32816fb 100644
+index 6daf1c0..4968f3c 100644
 --- a/runner/video/genesis_bus.c
 +++ b/runner/video/genesis_bus.c
 @@ -7,6 +7,9 @@
@@ -398,7 +398,25 @@ index 6daf1c0..32816fb 100644
  #include "genesis_expansion.h"
  #include "../audio/event_queue.h"
  #include <string.h>
-@@ -419,7 +422,7 @@ void gbus_write16(GenesisBus *b, uint32_t a, uint16_t v)
+@@ -78,10 +81,16 @@ static uint64_t ym_abs_68k_stamp(void)
+            (uint64_t)STAMP_68K();
+ }
+ 
++#define YM_TIMER_GUARD 64u
++
+ static void ym_timer_update(GenesisBus *b, uint64_t now)
+ {
++    /* The read stamp carries the Z80 instruction overshoot, so two backends can
++     * land within a few master cycles of the deadline on opposite sides. Require
++     * a small margin past the deadline before flagging overflow, so a cycle-level
++     * difference cannot flip the timer flag (and with it the game's driver). */
+     if (!b->ym_timer_b_running || b->ym_timer_b_period == 0 ||
+-        now < b->ym_timer_b_deadline)
++        now < b->ym_timer_b_deadline + YM_TIMER_GUARD)
+         return;
+ 
+     if (b->ym_mode & 0x08u)             /* enable timer-B overflow flag */
+@@ -419,7 +428,7 @@ void gbus_write16(GenesisBus *b, uint32_t a, uint16_t v)
          if ((a & 0xFFFFu) < 0x2000u) { unsigned off = a & 0x1FFFu;
              snd_trace_68k_write((uint16_t)off, b->z80_ram[off], (uint8_t)(v >> 8),
                                  b->z80_busreq, b->z80_reset_off);  /* [SND-TRACE] */
@@ -407,7 +425,7 @@ index 6daf1c0..32816fb 100644
          if (a >= 0xA04000u && a <= 0xA04003u) {
              uint8_t port = (uint8_t)(a & 3);
              ym_write_side_effect(b, port, (uint8_t)v, ym_abs_68k_stamp());
-@@ -469,7 +472,7 @@ void gbus_write8(GenesisBus *b, uint32_t a, uint8_t v)
+@@ -469,7 +478,7 @@ void gbus_write8(GenesisBus *b, uint32_t a, uint8_t v)
          if ((a & 0xFFFFu) < 0x2000u) { unsigned off = a & 0x1FFFu;
              snd_trace_68k_write((uint16_t)off, b->z80_ram[off], v,
                                  b->z80_busreq, b->z80_reset_off);  /* [SND-TRACE] */
@@ -416,7 +434,7 @@ index 6daf1c0..32816fb 100644
          if (a >= 0xA04000u && a <= 0xA04003u) {
              uint8_t port = (uint8_t)(a & 3);
              ym_write_side_effect(b, port, v, ym_abs_68k_stamp());
-@@ -499,10 +502,33 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
+@@ -499,10 +508,33 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
      return gbus_read8(b, a68);
  }
  

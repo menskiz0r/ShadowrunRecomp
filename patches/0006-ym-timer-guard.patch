@@ -1,0 +1,21 @@
+index 6daf1c0..4968f3c 100644
+--- a/runner/video/genesis_bus.c
++++ b/runner/video/genesis_bus.c
+@@ -78,10 +81,16 @@ static uint64_t ym_abs_68k_stamp(void)
+            (uint64_t)STAMP_68K();
+ }
+ 
++#define YM_TIMER_GUARD 64u
++
+ static void ym_timer_update(GenesisBus *b, uint64_t now)
+ {
++    /* The read stamp carries the Z80 instruction overshoot, so two backends can
++     * land within a few master cycles of the deadline on opposite sides. Require
++     * a small margin past the deadline before flagging overflow, so a cycle-level
++     * difference cannot flip the timer flag (and with it the game's driver). */
+     if (!b->ym_timer_b_running || b->ym_timer_b_period == 0 ||
+-        now < b->ym_timer_b_deadline)
++        now < b->ym_timer_b_deadline + YM_TIMER_GUARD)
+         return;
+ 
+     if (b->ym_mode & 0x08u)             /* enable timer-B overflow flag */

@@ -110,3 +110,16 @@ buffer size (default 1024), used while investigating the live-audio failure.
 Neither change affects emulation: they only read `s_framebuf`, write files, or
 override the input mask when explicitly asked. Apply with
 `git -C segagenesisrecomp apply ../patches/0004-local-debug-tooling.patch`.
+
+### 0006-ym-timer-guard.patch
+
+A real fix, not a diagnostic. `ym_timer_update()` flags a timer overflow when
+`now >= deadline`, where `now` is built from a line-relative Z80 stamp that carries
+the current instruction's overshoot. Two backends running identical Z80 code can
+therefore land a few master cycles either side of the deadline, flipping the status
+flag and with it the game's sound driver branch (observed as a 2-byte difference in
+the driver's stack word and then silence).
+
+The patch requires `now >= deadline + 64` master cycles (~8 us) before flagging
+overflow. On the cutscene-skip route this moves FM last-third from 383 to 4822, and
+the validated boot hashes (frames 1000/2000/3000/6000) are unchanged.
