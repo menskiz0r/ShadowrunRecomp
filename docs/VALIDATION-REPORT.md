@@ -477,3 +477,30 @@ Lesson: never clean up game processes while a measurement batch is running.
 So the skip remains a live-session phenomenon that automated, scripted launches do
 not reproduce; the harness is ready for the moment a session can be recorded with
 `scripts/record-session.ps1` (per-frame timeline + RAM ring + input replay).
+
+### Session recording with automatic scene labelling (2026-11-15)
+
+`scripts/record-session.ps1` launches the port and records, under
+`build/sessions/<timestamp>/`: a per-frame `timeline.err`, a RAM ring, a clean
+`run.log`, and a `summary.txt` produced by `tools/label_session.py`.
+
+The labeller turns consecutive identical frame hashes into named "scenes" and can
+compare a session against a catalog built from a known-good run:
+
+```
+python tools/label_session.py <session>.err --build  build/scene-catalog.json
+python tools/label_session.py <session>.err --compare build/scene-catalog.json
+```
+
+The comparison uses an ordered alignment (difflib), not hash lookup, because the
+logo hash repeats - a hash-keyed comparison produced bogus "truncated scene"
+reports. It also distinguishes a **short log** (session ended early) from a
+**skipped scene**, which was exactly the trap that produced a false reproduction
+earlier: four phantom "skips" were really truncated logs.
+
+Known-good reference: every complete automated launch shows 28 scenes with the
+longest near 1600 frames; a catalog built from one is enough to flag a missing
+cutscene in a future session.
+
+The catalog itself is not committed (it is derived from game imagery); rebuild it
+from any clean session.
