@@ -75,10 +75,10 @@ index 618a9bd..5044bc0 100644
 +    return cosim_pad_active;
 +}
 diff --git a/runner/glue.c b/runner/glue.c
-index 9678eef..5afe23c 100644
+index 9678eef..1ca7f65 100644
 --- a/runner/glue.c
 +++ b/runner/glue.c
-@@ -439,6 +439,29 @@ int recomp_dispatch_ram_stub(uint32_t addr)
+@@ -439,6 +439,36 @@ int recomp_dispatch_ram_stub(uint32_t addr)
      return 0;
  }
  
@@ -87,22 +87,29 @@ index 9678eef..5afe23c 100644
 +void genesis_trace_insn(uint32_t pc, uint32_t cycles)
 +{
 +    static FILE *f = NULL;
-+    static int init = 0;
-+    static uint32_t from = 0, to = ~0u;
++    static int init = 0, started = 0;
++    static uint32_t anchor = 0x000BD2u, count = 200000u;
++    static unsigned long long n = 0;
 +    if (!init) {
 +        init = 1;
 +        const char *p = getenv("GENESIS_INSN_TRACE");
 +        if (p && *p) {
 +            f = fopen(p, "w");
-+            const char *a = getenv("GENESIS_INSN_TRACE_FROM");
-+            const char *b = getenv("GENESIS_INSN_TRACE_TO");
-+            if (a && *a) from = (uint32_t)strtoul(a, NULL, 0);
-+            if (b && *b) to = (uint32_t)strtoul(b, NULL, 0);
++            const char *a = getenv("GENESIS_INSN_TRACE_AT");
++            const char *c2 = getenv("GENESIS_INSN_TRACE_COUNT");
++            if (a && *a) anchor = (uint32_t)strtoul(a, NULL, 16);
++            if (c2 && *c2) count = (uint32_t)strtoul(c2, NULL, 10);
 +        }
 +    }
-+    if (!f || g_frame_count < from || g_frame_count > to) return;
++    if (!f) return;
++    if (!started) {
++        if (pc != anchor) return;      /* common anchor: same first instruction */
++        started = 1;
++    }
++    if (n >= count) return;
 +    fprintf(f, "%u %06X %u %u %u\n", (unsigned)g_frame_count, (unsigned)(pc & 0xFFFFFFu),
 +            cycles, (unsigned)g_audio_cycle_counter, (unsigned)g_native_insn_count);
++    n++;
 +}
 +
  void glue_reset_frame_sync(void)
