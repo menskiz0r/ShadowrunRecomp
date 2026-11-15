@@ -746,3 +746,20 @@ Correction worth keeping: `383` is **not** by itself a failure signature. On the
 route is a quiet scene (interpreter: 383; recompiled: 383). The discriminator is only
 meaningful on a route where the interpreter keeps playing (the skip route), which is
 why earlier comparisons that used the full route were ambiguous.
+
+### 2026-11-15 (correction): the timer guard did not fix live play
+
+The 64-cycle timer guard was validated on a scripted skip route (presses at frames
+1342/1473/1546) where it moved FM last-third from 383 to 4822. A live session from
+the player pressed at 1253/1370/1401 - a different route - and with the guard the
+session still ended at **383**. The guard moved the decision threshold rather than
+removing the sensitivity, so it has been reverted and patch 0006 deleted.
+
+Lesson: a fix must be validated on more than one input trajectory, and the
+recording of the failing live session is the case that matters.
+
+Also: replaying an archived session currently fails with `invalid startup SRAM
+attachment` when the replay's `.sav` sidecar is the one the recorder copies after
+the session; the framework's `tools/replay_diagnostic.py` on an untouched
+`build/logs/Shadowrun-feedback.replay` works, so the archived sidecar handling needs
+looking at before replays can be used for verification.
