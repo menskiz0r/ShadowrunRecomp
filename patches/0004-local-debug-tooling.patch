@@ -1,3 +1,16 @@
+diff --git a/runner/audio.c b/runner/audio.c
+index ef618a4..9dab768 100644
+--- a/runner/audio.c
++++ b/runner/audio.c
+@@ -166,6 +166,8 @@ int audio_init(int psg_sample_rate)
+     want.format   = AUDIO_S16SYS;
+     want.channels = 2;
+     want.samples  = 1024;
++    { const char *ds = getenv("GENESIS_AUDIO_SAMPLES");
++      if (ds && *ds) { int v = atoi(ds); if (v >= 256 && v <= 16384) want.samples = (Uint16)v; } }
+     want.callback = genesis_audio_callback;
+ 
+     /* Allow SDL to renegotiate the request; the bridge keys off got.freq. */
 diff --git a/runner/cosim.c b/runner/cosim.c
 index 618a9bd..5044bc0 100644
 --- a/runner/cosim.c
@@ -62,7 +75,7 @@ index 618a9bd..5044bc0 100644
 +    return cosim_pad_active;
 +}
 diff --git a/runner/main.c b/runner/main.c
-index 60a0cce..9702854 100644
+index 60a0cce..0507c6d 100644
 --- a/runner/main.c
 +++ b/runner/main.c
 @@ -879,6 +879,7 @@ static int      s_sampling_netplay_local = 0;
@@ -122,7 +135,7 @@ index 60a0cce..9702854 100644
      int ok = png_write_argb(resolved, s_framebuf,
                              s_screen_width, s_screen_height,
                              MAX_SCREEN_WIDTH) == 0;
-@@ -1715,6 +1747,60 @@ static void check_ramdump(void)
+@@ -1715,6 +1747,82 @@ static void check_ramdump(void)
  #endif
  }
  
@@ -180,24 +193,53 @@ index 60a0cce..9702854 100644
 +    fclose(f);
 +}
 +
++/* TEMPORARY: ring-buffered work-RAM snapshots for hands-on sessions.
++ * --autodump-ram-dir <dir> [--autodump-ram-every N] [--autodump-ram-keep K]
++ * Writes <dir>/r%06u.ram every N frames and deletes snapshots older than K. */
++static const char *s_autodump_ram_dir = NULL;
++static int s_autodump_ram_every = 30;
++static int s_autodump_ram_keep = 400;
++static void dsh_autodump_ram(uint32_t frame)
++{
++    if (!s_autodump_ram_dir) return;
++    if (frame % (uint32_t)s_autodump_ram_every) return;
++    char path[600];
++    snprintf(path, sizeof path, "%s/r%06u.ram", s_autodump_ram_dir, frame);
++    FILE *f = fopen(path, "wb");
++    if (!f) return;
++    extern uint8_t g_ram[0x10000];
++    fwrite(g_ram, 1, 0x10000, f);
++    fclose(f);
++    uint32_t old = frame - (uint32_t)(s_autodump_ram_every * s_autodump_ram_keep);
++    snprintf(path, sizeof path, "%s/r%06u.ram", s_autodump_ram_dir, old);
++    remove(path);
++}
++
  static void write_framelog(uint32_t frame)
  {
      if (!s_framelog_file) return;
-@@ -2589,6 +2675,8 @@ int main(int argc, char *argv[])
+@@ -2589,6 +2697,14 @@ int main(int argc, char *argv[])
              hash_on_mode = 1;
          } else if (strcmp(argv[i], "--input-script") == 0 && i + 1 < argc) {
              input_script_path = argv[++i];
 +        } else if (strcmp(argv[i], "--autoshot-dir") == 0 && i + 1 < argc) {
 +            s_autoshot_dir = argv[++i];
++        } else if (strcmp(argv[i], "--autodump-ram-dir") == 0 && i + 1 < argc) {
++            s_autodump_ram_dir = argv[++i];
++        } else if (strcmp(argv[i], "--autodump-ram-every") == 0 && i + 1 < argc) {
++            s_autodump_ram_every = atoi(argv[++i]); if (s_autodump_ram_every <= 0) s_autodump_ram_every = 30;
++        } else if (strcmp(argv[i], "--autodump-ram-keep") == 0 && i + 1 < argc) {
++            s_autodump_ram_keep = atoi(argv[++i]); if (s_autodump_ram_keep <= 0) s_autodump_ram_keep = 400;
          } else if (strcmp(argv[i], "--exec-coverage-out") == 0 && i + 1 < argc) {
              exec_cov_out = argv[++i];
          } else if (strcmp(argv[i], "--yield-log") == 0) {
-@@ -3873,6 +3961,8 @@ session_begin:;
+@@ -3873,6 +3989,9 @@ session_begin:;
  
  
          /* --framelog: works in ALL build modes */
 +        dsh_autoshot(frame_num);
 +        dsh_blockring_dump(frame_num);
++        dsh_autodump_ram(frame_num);
          write_framelog(frame_num);
  
          /* [SND-TRACE] headless auto-dump: when --snd-dump-frame N is set, dump
