@@ -784,3 +784,28 @@ This gives two deterministic regression cases:
 
 Both can be replayed headlessly with `scripts/replay-run.ps1`, which is how any fix
 should be validated from now on - not against a scripted route.
+
+### 2026-11-16: combat stall confirmed as interior-label dispatch, from the player's own session
+
+Replaying the live combat session (5042 frames, all inputs matched) produced the
+recompiler's miss reports. `interior_label_misses.toml`:
+
+```
+[interior_labels]
+addresses = [
+  0x00B3EE, # session 1 frame 2656
+  0x014E0A, # session 1 frame 2656
+  0x00AC4E, # session 1 frame 2656
+  0x00B49C, # session 1 frame 3248
+]
+```
+
+`dispatch_misses.toml` is empty, so the gap is specifically *interior* dispatch: the
+game computes a jump into the middle of an existing function and no entry point
+exists. The frames (2656, 3248) are the combat moments in that session.
+
+Fix: in-function entry points. For each listed address the generator should emit
+`func_XXXX_from(n)` with a switch that jumps to the matching label (the generated
+code already uses labels for branches), plus a thunk registered in the dispatch
+table, leaving the plain `func_XXXX()` wrapper untouched. Seeding them as functions
+is not an option (it splits the parent and previously broke audio + crashed).
