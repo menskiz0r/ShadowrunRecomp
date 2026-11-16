@@ -1161,3 +1161,33 @@ The read-back is produced by the Z80 driver from its own state, which diverged e
 the remaining question is which driver state decides the echo. With `GENESIS_Z80_WATCH`
 and `z80mem` now available, the next step is to watch the driver's write to $0036
 (Z80 side) around frames 3380-3390 in both backends and compare the values.
+
+### 2026-11-17: the sound protocol mapped; the stop is game-side, not a blocked sender
+
+Static analysis of the sound library plus targeted watches resolved the protocol:
+
+- `$052E4E` takes BUSREQ, polls the ack and reads `$A00036`; `$052EB0`/`$052EC6` push
+  bytes through `$052EA2`, which writes into a 64-byte ring at `$A01B40` with an `$FF`
+  sentinel; the ring write index lives at `$A00036` (so the differing values seen at
+  frames 3382/3389 are just differing command counts, not a failed echo).
+- Bus wrappers: `$052DC2` (take: write `$100` to `$A11100`, poll bit 0), `$052DD6`
+  (release: write `$0`).
+- Music tick: `$0530DE` gates on two RAM flags `$FFFC0A` / `$FFFC08` and then sends
+  through `$052F3C`. It has 77 call sites.
+
+Measurements on the replay:
+
+- both flags read `0001` in both backends at frames 3000/3300/3390/3600/4800, so the
+  tick is enabled in both
+- the Z80 driver is alive at frame 3389 (260 line-steps, pc $0699/$0701) and never
+  writes the ring (only 64 boot zero-fills in both)
+- ring writes: 1058 (recompiled) vs 1110 (interpreter) - comparable totals, but the
+  recompiled build's last write is frame 3389 while the interpreter continues to 4995
+- traces at frames 4000/4466 show both backends executing the same hot code
+  (`$01DF44`, `$01DFBA`, `$00EBB6`); the sender entry points are not in those windows
+
+Conclusion: the game is not blocked from sending commands - the gate flags are open and
+the driver is alive. The recompiled build simply stops needing to send, which matches
+the earlier observation that its game state runs ahead/gets stuck (frame 1627 showed it
+inside a VRAM decompressor while the interpreter idled at VBlank). So the remaining
+defect is in game-flow, not in the sound handshake.
