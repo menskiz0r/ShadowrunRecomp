@@ -531,38 +531,60 @@ index 60a0cce..adc0864 100644
      shadow_worker_cleanup();
      genesis_hd_gpu_destroy(hd_gpu);
 diff --git a/runner/video/genesis_bus.c b/runner/video/genesis_bus.c
-index 6daf1c0..32816fb 100644
+index 6daf1c0..9f06895 100644
 --- a/runner/video/genesis_bus.c
 +++ b/runner/video/genesis_bus.c
-@@ -7,6 +7,9 @@
+@@ -7,6 +7,22 @@
   * genesis_machine.c).
   */
  #include "genesis_bus.h"
++
 +void gbus_68k_z80ram(unsigned off, uint8_t val);
 +#include <stdio.h>
 +#include <stdlib.h>
++static void z80cmd_log(uint16_t off, uint8_t val);
++static void z80rd_log(uint32_t a, uint8_t val);
++/* Log 68K READS of Z80 space (the driver handshake polls) for the sound hunt. */
++static void z80rd_log(uint32_t a, uint8_t val)
++{
++    static int on = -1;
++    extern unsigned long g_snd_frame;
++    if (on < 0) { const char *e = getenv("GENESIS_Z80CMD_LOG"); on = (e && *e && *e != '0'); }
++    if (!on) return;
++    if (g_snd_frame < 3300ul) return;      /* only the interesting window */
++    fprintf(stderr, "[Z80RD] f=%lu a=%06X val=%02X\n", g_snd_frame, a, val);
++}
  #include "genesis_expansion.h"
  #include "../audio/event_queue.h"
  #include <string.h>
-@@ -419,7 +422,7 @@ void gbus_write16(GenesisBus *b, uint32_t a, uint16_t v)
+@@ -383,7 +399,7 @@ uint8_t gbus_peek8(const GenesisBus *b, uint32_t a)
+ {
+     a &= 0xFFFFFFu;
+     if (a >= 0xA00000u && a < 0xA10000u && (a & 0xFFFFu) < 0x2000u)
+-        return b->z80_ram[a & 0x1FFFu];
++        z80rd_log(a, b->z80_ram[a & 0x1FFFu]); return b->z80_ram[a & 0x1FFFu];
+     if (sram_hit(b, a))
+         return b->sram[a - b->sram_base];
+     uint16_t w = gbus_peek16(b, a & ~1u);
+@@ -419,7 +435,7 @@ void gbus_write16(GenesisBus *b, uint32_t a, uint16_t v)
          if ((a & 0xFFFFu) < 0x2000u) { unsigned off = a & 0x1FFFu;
              snd_trace_68k_write((uint16_t)off, b->z80_ram[off], (uint8_t)(v >> 8),
                                  b->z80_busreq, b->z80_reset_off);  /* [SND-TRACE] */
 -            b->z80_ram[off] = (uint8_t)(v >> 8); return; }
-+            gbus_68k_z80ram(off, (uint8_t)(v >> 8)); b->z80_ram[off] = (uint8_t)(v >> 8); return; }
++            gbus_68k_z80ram(off, (uint8_t)(v >> 8)); z80cmd_log((uint16_t)off, (uint8_t)(v >> 8)); b->z80_ram[off] = (uint8_t)(v >> 8); return; }
          if (a >= 0xA04000u && a <= 0xA04003u) {
              uint8_t port = (uint8_t)(a & 3);
              ym_write_side_effect(b, port, (uint8_t)v, ym_abs_68k_stamp());
-@@ -469,7 +472,7 @@ void gbus_write8(GenesisBus *b, uint32_t a, uint8_t v)
+@@ -469,7 +485,7 @@ void gbus_write8(GenesisBus *b, uint32_t a, uint8_t v)
          if ((a & 0xFFFFu) < 0x2000u) { unsigned off = a & 0x1FFFu;
              snd_trace_68k_write((uint16_t)off, b->z80_ram[off], v,
                                  b->z80_busreq, b->z80_reset_off);  /* [SND-TRACE] */
 -            b->z80_ram[off] = v; return; }
-+            gbus_68k_z80ram(off, v); b->z80_ram[off] = v; return; }
++            gbus_68k_z80ram(off, v); z80cmd_log((uint16_t)off, v); b->z80_ram[off] = v; return; }
          if (a >= 0xA04000u && a <= 0xA04003u) {
              uint8_t port = (uint8_t)(a & 3);
              ym_write_side_effect(b, port, v, ym_abs_68k_stamp());
-@@ -499,10 +502,33 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
+@@ -499,10 +515,44 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
      return gbus_read8(b, a68);
  }
  
@@ -579,6 +601,17 @@ index 6daf1c0..32816fb 100644
 +        fflush(stderr);
 +    }
 +    (void)g_z80_pc_now;
++}
++
++/* Log every 68K write into Z80 RAM (the sound driver's command mailbox) so the two
++ * backends' command streams can be compared. GENESIS_Z80CMD_LOG=1. */
++static void z80cmd_log(uint16_t off, uint8_t val)
++{
++    static int on = -1;
++    extern unsigned long g_snd_frame;
++    if (on < 0) { const char *e = getenv("GENESIS_Z80CMD_LOG"); on = (e && *e && *e != '0'); }
++    if (!on) return;
++    fprintf(stderr, "[Z80CMD] f=%u off=%04X val=%02X\n", (unsigned)g_snd_frame, off, val);
 +}
 +
  void gbus_z80_write(GenesisBus *b, uint16_t addr, uint8_t val)

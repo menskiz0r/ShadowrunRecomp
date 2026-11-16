@@ -987,3 +987,33 @@ line of attack is the command stream itself: log every 68K write into Z80 RAM du
 the replay on both backends and compare - if the recompiled 68K sends a different
 sequence (a stop command, or stops sending the per-frame tick) that is the defect,
 and it would be visible as a difference in that stream rather than in timing.
+
+### 2026-11-16: the music stops because the 68K stops commanding the driver
+
+Added `GENESIS_Z80CMD_LOG`, which logs every 68K write into Z80 RAM (the sound
+driver's command mailbox), and compared both backends over the whole replay:
+
+```
+commands: recompiled 42248   interpreter 42335
+last recompiled command: frame 3389   off=0036 val=22
+last interpreter command: frame 4995
+```
+
+Both backends send an identical command sequence (the first 41964 commands match,
+modulo frame numbering), both pause at frame 3389 - a scene change where the game
+re-uploads part of the driver (writes at Z80 $1B5C-$1B61 with values FF,10,..,3C and
+a trigger byte at $0036) - and then:
+
+- the interpreter resumes commanding the driver from ~frame 3500 to 4995
+- the recompiled build never sends another command
+
+The audio evidence matches: the FM stream never goes fully silent, it drops to
+residual SFX (~383) from that point, because nothing drives the music any more.
+
+So the defect is NOT the Z80 timer or the interleaving: it is the sound-driver
+re-initialisation at a scene change, after which the game's 68K side gives up on the
+driver. The likely shape is the upload/handshake loop timing out because the Z80
+state it waits on is never set.
+
+A `[Z80RD]` read probe was added to see what the 68K polls while stuck, but it did not
+fire - the 68K's Z80 reads go through a path not yet hooked.
