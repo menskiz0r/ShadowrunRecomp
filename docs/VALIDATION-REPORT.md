@@ -1191,3 +1191,29 @@ the driver is alive. The recompiled build simply stops needing to send, which ma
 the earlier observation that its game state runs ahead/gets stuck (frame 1627 showed it
 inside a VRAM decompressor while the interpreter idled at VBlank). So the remaining
 defect is in game-flow, not in the sound handshake.
+
+### 2026-11-17: frame-numbered comparisons are not valid (phase offset)
+
+Using the 169 RAM snapshots from both backends (every 30 frames) and computing, per
+address, the first frame at which it differs:
+
+```
+frame   30 : 1 address    ($FFFFF3, stack)
+frame   60 : 8 addresses  ($FFF9EF, $FFF9F7 are inside the game's VBlank counter)
+frame   90 : 812 addresses at once
+```
+
+The earliest differences are the VBlank counter phase and stack, and the 812-address
+burst at frame 90 is one frame of offset propagating. So the two backends reach frame N
+at different guest moments - the recompiled code parks at its VBlank fast path while the
+forced interpreter runs the wait loop as instructions, which shifts their position
+within the frame.
+
+Consequence: comparing work RAM, traces or audio segments by frame NUMBER is invalid;
+only cycle-aligned comparison (the co-sim) is. Several earlier conclusions drawn from
+frame-indexed RAM diffs should be treated as suspect for this reason, including the
+"197 differing bytes" observation at frame 3390.
+
+This also means the remaining question ("why does the recompiled 68K stop sending sound
+commands after frame 3389") cannot be answered by frame-indexed comparison: it needs a
+common anchor (a specific sound command, a VBlank count, or the co-sim).
