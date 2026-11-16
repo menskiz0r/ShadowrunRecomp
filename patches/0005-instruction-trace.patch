@@ -1,5 +1,5 @@
 diff --git a/profiles/genesis/code_generator.c b/profiles/genesis/code_generator.c
-index 77faaa8..fea7bae 100644
+index 77faaa8..5ad3ca6 100644
 --- a/profiles/genesis/code_generator.c
 +++ b/profiles/genesis/code_generator.c
 @@ -31,6 +31,10 @@
@@ -24,7 +24,7 @@ index 77faaa8..fea7bae 100644
  {
      if (cycles < 0)
          return;
-+    if (!addr) addr = s_emit_pc;
++    if (!addr) addr = 0;   /* unattributed site: log 0, never a stale PC */
      fprintf(f, "%sg_native_insn_count++; g_cycle_accumulator += %d;"
                 " g_audio_cycle_counter += %d;"
                 " if (g_cycle_accumulator >= g_vblank_threshold)"
