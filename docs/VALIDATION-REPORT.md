@@ -1017,3 +1017,22 @@ state it waits on is never set.
 
 A `[Z80RD]` read probe was added to see what the 68K polls while stuck, but it did not
 fire - the 68K's Z80 reads go through a path not yet hooked.
+
+### 2026-11-16: after the pause the 68K never touches the driver again
+
+Hooked the real 68K Z80 read path (`gbus_read16`, the byte-readable Z80 RAM window)
+and replayed with the command log enabled. After frame 3389 the 68K performs only
+**two** Z80 reads, both of the trigger byte `$A00036` - so it is not spinning on a
+handshake. The game simply stops calling its sound code.
+
+That rules out "the handshake times out": the 68K never asks again.
+
+Work-RAM comparison at frame 3390 shows 197 differing bytes concentrated in
+`$FF0000-$FF00FF`, a table of small values (1..6) that looks like object/animation
+state rather than a music flag. The command streams first differ in value at frame
+1626, so the game state begins to split there (after the intro skip) and the sound
+subsystem is abandoned 1700 frames later.
+
+Next: trace 68K execution around frame 1626 (the existing GEN_TRACE hook records the
+address of most instructions) to see which routine takes a different path, then work
+forward to the point where the per-frame sound tick stops being called.
