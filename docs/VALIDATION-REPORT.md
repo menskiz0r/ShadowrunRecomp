@@ -1036,3 +1036,22 @@ subsystem is abandoned 1700 frames later.
 Next: trace 68K execution around frame 1626 (the existing GEN_TRACE hook records the
 address of most instructions) to see which routine takes a different path, then work
 forward to the point where the per-frame sound tick stops being called.
+
+### 2026-11-16: full-address tracing, and why the comparison still isn't exact
+
+The generator now emits an address for every GEN_TRACE site (32983 sites with a real
+address, none zero), via a file-scope `s_emit_pc` fallback set by the emission loop
+(the per-instruction emitter itself has no `pc` parameter). Boot hashes are unchanged
+(45E5/E29B/06B5).
+
+Re-running the frame-1627 comparison still shows the recompiled side repeating a
+single address with varying costs (`pc=00160E` with 4, 8, 10, 14, 16), so `s_emit_pc`
+is stale for those instructions - the per-instruction emitter must take the address as
+a parameter rather than reading a global that some other emitter path overwrites.
+
+State of the sound investigation, unchanged in substance:
+- music stops because the game stops commanding the driver (command stream proof)
+- game state splits around frame 1626, shortly after the intro skip
+- the recompiled 68K never retries the driver (2 Z80 reads total after the pause)
+- all timing hypotheses (timer guard, span batching, bus sync, 8/32/128-slice
+  interleaving) tested and disproven

@@ -1,5 +1,5 @@
 diff --git a/profiles/genesis/code_generator.c b/profiles/genesis/code_generator.c
-index 77faaa8..d00fbea 100644
+index 77faaa8..993831a 100644
 --- a/profiles/genesis/code_generator.c
 +++ b/profiles/genesis/code_generator.c
 @@ -31,6 +31,10 @@
@@ -13,16 +13,22 @@ index 77faaa8..d00fbea 100644
  static const M68KInstr *s_diag_instr     = NULL;
  /* Active only while emitting a proven unobservable register span. Ordinary
   * instruction emission retains every architectural flag write. */
-@@ -1063,7 +1067,7 @@ static const char *bcc_cond_expr(int cond) {
+@@ -1063,10 +1067,13 @@ static const char *bcc_cond_expr(int cond) {
      }
  }
  
 -static void emit_cycle_accounting(FILE *f, const char *indent, int cycles)
++static uint32_t s_emit_pc = 0;   /* address of the instruction being emitted */
++
 +static void emit_cycle_accounting(FILE *f, const char *indent, int cycles, uint32_t addr)
  {
      if (cycles < 0)
          return;
-@@ -1074,6 +1078,7 @@ static void emit_cycle_accounting(FILE *f, const char *indent, int cycles)
++    if (!addr) addr = s_emit_pc;
+     fprintf(f, "%sg_native_insn_count++; g_cycle_accumulator += %d;"
+                " g_audio_cycle_counter += %d;"
+                " if (g_cycle_accumulator >= g_vblank_threshold)"
+@@ -1074,6 +1081,7 @@ static void emit_cycle_accounting(FILE *f, const char *indent, int cycles)
      /* Differential co-sim per-instruction checkpoint (no-op unless GENESIS_COSIM;
       * mirrors interp_account_cycles in m68k_interp.c). */
      fprintf(f, "%sGEN_COSIM_TICK(%d);\n", indent, cycles);
@@ -30,7 +36,7 @@ index 77faaa8..d00fbea 100644
  }
  
  static bool func_is_known(uint32_t addr);
-@@ -1096,7 +1101,7 @@ static void emit_static_tail_target(FILE *f,const GenesisRom *rom,const char *in
+@@ -1096,7 +1104,7 @@ static void emit_static_tail_target(FILE *f,const GenesisRom *rom,const char *in
  static void emit_split_tail_call(FILE *f, const GenesisRom *rom,const char *indent,
                                   uint32_t target_addr, bool carry_sp_adjust,
                                   int cycles_before) {
@@ -39,7 +45,7 @@ index 77faaa8..d00fbea 100644
      if (carry_sp_adjust) {
          fprintf(f, "%s{ g_split_sp_popped += _sp_popped; _sp_popped = 0;\n", indent);
          emit_static_tail_target(f,rom,indent,target_addr);
-@@ -1112,7 +1117,7 @@ static void emit_split_tail_call_expr(FILE *f, const char *indent,
+@@ -1112,7 +1120,7 @@ static void emit_split_tail_call_expr(FILE *f, const char *indent,
                                        const char *addr_expr,
                                        bool carry_sp_adjust,
                                        int cycles_before) {
@@ -48,7 +54,7 @@ index 77faaa8..d00fbea 100644
      if (carry_sp_adjust) {
          fprintf(f, "%s{ g_split_sp_popped += _sp_popped; _sp_popped = 0;\n", indent);
          fprintf(f, "%s  recomp_tail_call(%s);\n", indent, addr_expr);
-@@ -2021,13 +2026,22 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2021,13 +2029,22 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
           * through the C callers; a boolean loses the second unwind and
           * resumes code the guest deliberately skipped. Tail edges do not
           * consume this count; each actual JSR/BSR caller consumes one. */
@@ -73,7 +79,7 @@ index 77faaa8..d00fbea 100644
          fprintf(f, "  return;\n");
          *skip_until_label = true;
          break;
-@@ -2049,7 +2063,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2049,7 +2066,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
           * need to be reinstated as the sole SR restore mechanism. */
          fprintf(f, "  g_cpu.SR = (uint16_t)m68k_read16(g_cpu.A[7]); g_cpu.A[7] += 2; /* RTE: pop SR */\n");
          fprintf(f, "  g_cpu.PC = m68k_read32(g_cpu.A[7]);            g_cpu.A[7] += 4; /* RTE: pop PC */\n");
@@ -82,7 +88,7 @@ index 77faaa8..d00fbea 100644
          fprintf(f, "  g_rte_pending = 1; return; /* RTE */\n");
          *skip_until_label = true;
          break;
-@@ -2070,7 +2084,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2070,7 +2087,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
           * real SR + yield semantics. */
          fprintf(f, "  g_cpu.SR = (uint16_t)0x%04Xu;\n",
                  (unsigned)(instr->imm32 & 0xFFFFu));
@@ -91,7 +97,7 @@ index 77faaa8..d00fbea 100644
          fprintf(f, "  genesis_stop_until_interrupt((uint16_t)0x%04Xu);\n",
                  (unsigned)(instr->imm32 & 0xFFFFu));
          fprintf(f, "  return; /* STOP — yield+return, see comment above */\n");
-@@ -2115,7 +2129,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2115,7 +2132,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
              fprintf(f, "    if (g_rte_pending) --g_rte_pending; /* consume the handler's RTE */\n");
              fprintf(f, "  }\n");
          } else {
@@ -100,7 +106,7 @@ index 77faaa8..d00fbea 100644
              fprintf(f, "  m68k_trap_vector(0x%02Xu); return;\n", 0x20u + trap_num);
              *skip_until_label = true;
          }
-@@ -2126,7 +2140,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2126,7 +2143,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
      case MN_TRAPV:
          /* Vector 7 — only fires when V is set. Falls through otherwise. */
          fprintf(f, "  if (g_cpu.SR & %s) {\n", SR_V);
@@ -109,7 +115,7 @@ index 77faaa8..d00fbea 100644
          fprintf(f, "    m68k_trap_vector(7u); return;\n");
          fprintf(f, "  }\n");
          break;
-@@ -2139,7 +2153,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2139,7 +2156,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
          fprintf(f, "  { uint16_t _ccrw = (uint16_t)m68k_read16(g_cpu.A[7]); g_cpu.A[7] += 2;\n");
          fprintf(f, "    g_cpu.SR = (uint16_t)((g_cpu.SR & 0xFF00u) | (_ccrw & 0x00FFu)); }\n");
          fprintf(f, "  g_cpu.PC = m68k_read32(g_cpu.A[7]); g_cpu.A[7] += 4;\n");
@@ -118,7 +124,7 @@ index 77faaa8..d00fbea 100644
          fprintf(f, "  g_rte_pending = 1; return; /* RTR */\n");
          *skip_until_label = true;
          break;
-@@ -2159,7 +2173,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2159,7 +2176,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
      /* ------------------------------------------------------------------ */
      case MN_ILLEGAL:
          /* 0x4AFC, A-line, F-line — runtime picks the right vector. */
@@ -127,7 +133,7 @@ index 77faaa8..d00fbea 100644
          fprintf(f, "  m68k_illegal_trap(0x%06Xu, 0x%04Xu); return;\n",
                  addr, (unsigned)instr->words[0]);
          *skip_until_label = true;
-@@ -2214,7 +2228,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2214,7 +2231,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
              fprintf(f, "    g_split_sp_popped = _saved_split_sp_popped;\n");
              fprintf(f, "  }\n");
              fprintf(f, "  g_rte_pending = 0; /* callee captured our return; handled here */\n");
@@ -136,7 +142,7 @@ index 77faaa8..d00fbea 100644
              fprintf(f, "  return; /* callee captured return addr: no pop, no fall-through */\n");
              *skip_until_label = true;
              break;
-@@ -2244,6 +2258,15 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2244,6 +2261,15 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
              fprintf(f, "    recomp_call_addr(%s);\n", ae);
              fprintf(f, "    g_split_sp_popped = _saved_split_sp_popped;\n");
              fprintf(f, "  }\n");
@@ -152,7 +158,7 @@ index 77faaa8..d00fbea 100644
          } else {
              codegen_diag_record(CGD_TODO_DYNAMIC_JSR_UNSUPPORTED, addr,
                                  instr->words[0], instr->mnemonic,
-@@ -2285,7 +2308,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2285,7 +2311,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
           * pop keeps A7 in sync with hardware. Consume one skipped return
           * slot; additional skipped slots continue through outer callers. */
          fprintf(f, "  if (g_rte_pending) { --g_rte_pending;\n");
@@ -161,7 +167,7 @@ index 77faaa8..d00fbea 100644
          fprintf(f, "    return; } /* RTE/skip propagation (pre-pop) */\n");
          fprintf(f,
                  "  if (g_cpu.A[7] != (uint32_t)(_jsr_slot_sp_%06X + 4u))\n"
-@@ -2305,7 +2328,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2305,7 +2331,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
              audit_record(instr->addr, func_addr, instr->target_addr,
                           JMPAUDIT_STATIC_TARGET, 0);
              if (addrset_contains(instrs, instr->target_addr)) {
@@ -170,7 +176,7 @@ index 77faaa8..d00fbea 100644
                  fprintf(f, "  goto label_%06X;\n", instr->target_addr);
              } else {
                  emit_split_tail_call(f, rom,"  ", instr->target_addr, *has_sp_adjust != 0,
-@@ -2356,7 +2379,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2356,7 +2382,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
                               JMPAUDIT_IN_FUNCTION_SWITCH, npc);
                  fprintf(f, "  /* JMP table at $%06X: in-function dispatch — base $%06X + %s[%d], %d targets (Duff's device) */\n",
                          instr->addr, base, xr + 6 /* skip "g_cpu." */, xreg, npc);
@@ -179,7 +185,7 @@ index 77faaa8..d00fbea 100644
                  fprintf(f, "  switch ((int32_t)m68k_brief_index_value(0x%04Xu, "
                          "g_cpu.D[%d], g_cpu.A[%d])) {\n", ext, xreg, xreg);
                  { int32_t seen_offsets[512]; int seen_count = 0;
-@@ -2382,7 +2405,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2382,7 +2408,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
                               JMPAUDIT_IN_FUNCTION_SWITCH, not_);
                  fprintf(f, "  /* JMP table at $%06X: in-function dispatch — base $%06X + %s[%d], %d targets (offset table) */\n",
                          instr->addr, base, xr + 6 /* skip "g_cpu." */, xreg, not_);
@@ -188,7 +194,7 @@ index 77faaa8..d00fbea 100644
                  fprintf(f, "  switch ((int32_t)m68k_brief_index_value(0x%04Xu, "
                          "g_cpu.D[%d], g_cpu.A[%d])) {\n", ext, xreg, xreg);
                  { int seen_offsets[512]; int seen_count = 0;
-@@ -2404,7 +2427,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2404,7 +2430,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
                               JMPAUDIT_FALLBACK_HYBRID, 0);
                  fprintf(f, "  /* JMP table at $%06X: interpret handler at base $%06X + %s[%d] */\n",
                          instr->addr, base, xr + 6 /* skip "g_cpu." */, xreg);
@@ -197,7 +203,7 @@ index 77faaa8..d00fbea 100644
                  fprintf(f, "  hybrid_jmp_interpret(0x%08Xu + "
                          "m68k_brief_index_value(0x%04Xu, g_cpu.D[%d], g_cpu.A[%d]));\n",
                          base, ext, xreg, xreg);
-@@ -2416,7 +2439,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2416,7 +2442,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
              codegen_diag_record(CGD_TODO_DYNAMIC_JMP_UNSUPPORTED, addr,
                                  instr->words[0], MN_JMP,
                                  func_name, func_addr);
@@ -206,7 +212,7 @@ index 77faaa8..d00fbea 100644
              fprintf(f, "  /* TODO: dynamic JMP mode %d/%d */ return;\n", mode, reg);
          }
          *skip_until_label = true;
-@@ -2427,7 +2450,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2427,7 +2453,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
      case MN_BRA:
          if (instr->has_target) {
              if (addrset_contains(instrs, instr->target_addr)) {
@@ -215,7 +221,7 @@ index 77faaa8..d00fbea 100644
                  fprintf(f, "  goto label_%06X;\n", instr->target_addr);
              } else {
                  emit_split_tail_call(f, rom,"  ", instr->target_addr, *has_sp_adjust != 0,
-@@ -2437,7 +2460,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2437,7 +2463,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
              codegen_diag_record(CGD_BRANCH_WITHOUT_TARGET, addr,
                                  instr->words[0], MN_BRA,
                                  func_name, func_addr);
@@ -224,7 +230,7 @@ index 77faaa8..d00fbea 100644
              fprintf(f, "  /* BRA with no target */ return;\n");
          }
          *skip_until_label = true;
-@@ -2496,13 +2519,13 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2496,13 +2522,13 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
                   * Falls through naturally when the flag is clear. */
                  if (addrset_contains(instrs, instr->target_addr)) {
                      fprintf(f, "  if (%s) {\n", ce);
@@ -240,7 +246,7 @@ index 77faaa8..d00fbea 100644
                      fprintf(f, "    glue_yield_for_interrupt_poll();\n");
                      emit_split_tail_call(f, rom,"    ", instr->target_addr, *has_sp_adjust != 0,
                                           -1);
-@@ -2511,7 +2534,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2511,7 +2537,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
                  g_yield_in_next_bne = false;
              } else if (addrset_contains(instrs, instr->target_addr)) {
                  fprintf(f, "  if (%s) {\n", ce);
@@ -249,7 +255,7 @@ index 77faaa8..d00fbea 100644
                  fprintf(f, "    goto label_%06X;\n", instr->target_addr);
                  fprintf(f, "  }\n");
              } else {
-@@ -2542,7 +2565,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2542,7 +2568,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
          fprintf(f, "    if ((int16_t)g_cpu.D[%d] != -1) {\n", dreg);
          if (instr->has_target) {
              if (addrset_contains(instrs, instr->target_addr)) {
@@ -258,7 +264,7 @@ index 77faaa8..d00fbea 100644
                  fprintf(f, "      goto label_%06X;\n", instr->target_addr);
              } else {
                  emit_split_tail_call(f, rom,"      ", instr->target_addr, *has_sp_adjust != 0,
-@@ -3766,12 +3789,12 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -3766,12 +3792,12 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
              "    int16_t _val   = (int16_t)g_cpu.D[%d];\n"
              "    if (_val < 0)        { g_cpu.SR |= %s;\n",
              src_expr, dn, SR_N);
@@ -273,7 +279,15 @@ index 77faaa8..d00fbea 100644
          fprintf(f,
              "      m68k_trap_vector(6u); return; }\n"
              "  }\n");
-@@ -5162,6 +5185,7 @@ bool codegen_emit(const GenesisRom *rom, const FunctionList *funcs,
+@@ -5095,6 +5121,7 @@ bool codegen_emit(const GenesisRom *rom, const FunctionList *funcs,
+          *                             at $03AD0C / $03AD2A). */
+         for (int j = 0; j < instrs.count; j++) {
+             uint32_t pc = instrs.addrs[j];
++            s_emit_pc = pc;
+             M68KInstr probe;
+             if (!m68k_decode(rom, pc, &probe)) continue;
+             if (probe.mnemonic != MN_JMP) continue;
+@@ -5162,6 +5189,7 @@ bool codegen_emit(const GenesisRom *rom, const FunctionList *funcs,
           * cannot be classified as either an ordinary or an unconditional
           * return-capturing callee at the call site. */
          int has_sp_adjust = 0;
@@ -281,7 +295,7 @@ index 77faaa8..d00fbea 100644
          for (int j = 0; j < instrs.count; j++) {
              M68KInstr pre;
              if (m68k_decode(rom, instrs.addrs[j], &pre)) {
-@@ -5169,6 +5193,7 @@ bool codegen_emit(const GenesisRom *rom, const FunctionList *funcs,
+@@ -5169,6 +5197,7 @@ bool codegen_emit(const GenesisRom *rom, const FunctionList *funcs,
                      ((pre.src_ea >> 3) & 7) == 1 && (pre.src_ea & 7) == 7 &&
                      pre.imm32 > 0) {
                      has_sp_adjust = 1;
@@ -289,7 +303,7 @@ index 77faaa8..d00fbea 100644
                      break;
                  }
                  if ((pre.mnemonic == MN_MOVE || pre.mnemonic == MN_MOVEA)
-@@ -5198,6 +5223,7 @@ bool codegen_emit(const GenesisRom *rom, const FunctionList *funcs,
+@@ -5198,6 +5227,7 @@ bool codegen_emit(const GenesisRom *rom, const FunctionList *funcs,
                  }
              }
          }
@@ -297,7 +311,7 @@ index 77faaa8..d00fbea 100644
          if (has_sp_adjust) {
              /* A generated split-function tail call is one 68K control-flow
               * path, not a real JSR boundary.  Consume its carried net stack
-@@ -5388,7 +5414,7 @@ bool codegen_emit(const GenesisRom *rom, const FunctionList *funcs,
+@@ -5388,7 +5418,7 @@ bool codegen_emit(const GenesisRom *rom, const FunctionList *funcs,
               * matching the interpreter's interrupt-driven behavior. */
              {
                  int cyc = estimate_cycles(&instr);
