@@ -1139,3 +1139,25 @@ driver -> no more music commands -> music dies while SFX continue.
 
 Remaining question: why the driver's response byte differs at that moment (the Z80 RAM
 state it reads from), which is the same state divergence tracked from frame 25.
+
+### 2026-11-16: the mailbox protocol - deposit, echo, give up
+
+Watched Z80 RAM offset $0036 (the handshake byte) on both backends. The 68K deposits
+an incrementing sequence there:
+
+```
+recompiled : ... 18,19,1B,1C (f=3279)  1E,1F (f=3382)  21,22 (f=3389)  then nothing
+interpreter: ... continues through 06..16 up to f=4995
+```
+
+and the read-back differs from what was deposited (recompiled deposits 1E,1F at f=3382
+and reads 1C; the interpreter reads 3F at f=3389). After those mismatches the
+recompiled build never deposits another command.
+
+So the protocol is deposit -> read-back (the driver's echo/status) -> decide, and the
+recompiled build's read-back does not match, so the game stops commanding the driver.
+
+The read-back is produced by the Z80 driver from its own state, which diverged earlier;
+the remaining question is which driver state decides the echo. With `GENESIS_Z80_WATCH`
+and `z80mem` now available, the next step is to watch the driver's write to $0036
+(Z80 side) around frames 3380-3390 in both backends and compare the values.
