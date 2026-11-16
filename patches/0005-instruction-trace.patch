@@ -1,5 +1,5 @@
 diff --git a/profiles/genesis/code_generator.c b/profiles/genesis/code_generator.c
-index 77faaa8..5ad3ca6 100644
+index 77faaa8..8c54482 100644
 --- a/profiles/genesis/code_generator.c
 +++ b/profiles/genesis/code_generator.c
 @@ -31,6 +31,10 @@
@@ -357,7 +357,7 @@ index 77faaa8..5ad3ca6 100644
              {
                  int cyc = estimate_cycles(&instr);
 -                emit_cycle_accounting(f_func, "  ", cyc);
-+                emit_cycle_accounting(f_func, "  ", cyc, 0);
++                emit_cycle_accounting(f_func, "  ", cyc, pc);
              }
  
              /* Two valid entry streams can overlap in ROM. Sorted emission

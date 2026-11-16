@@ -1078,3 +1078,38 @@ What the traces do show today:
 So the comparison is close but not yet trustworthy. Next step: give the step-runtime
 and split-tail emitters the real instruction address (they currently pass ins->addr),
 then re-run the frame-1627 comparison.
+
+### 2026-11-16: trace fully attributed - the recompiled build loops in a VDP transfer
+
+The last 24508 zero-address trace sites were the loop's *second* cycle-accounting call
+(`emit_cycle_accounting(f_func, "  ", cyc, 0)` after emit_instr, for VBlank checks).
+Passing `pc` there makes the generated trace 32982/32983 attributed.
+
+Frame-1627 comparison, both traces fully attributed:
+
+```
+recompiled : 262144 entries, top $0015D4/$0015D8/$0015DA/$0015DE (12313 each)
+interpreter: 262144 entries, top $000BDE/$000BE4 (129588 each = the VBlank wait)
+```
+
+The recompiled 68K spends the frame in this loop:
+
+```
+0015D4  move.b (a1,d4.w), d7
+0015D8  addq.w #1, d4
+0015DA  andi.w #$7ff, d4        ; 2 KB ring wrap
+0015DE  move.b d7, (a1,d6.w)
+0015E2  addq.w #1, d6
+0015E4  andi.w #$7ff, d6
+0015E8  btst.b #0, d2
+0015EE  move.w d7, $c00000.l    ; VDP data port
+0015FA  dbra d3, $0015D4
+```
+
+i.e. a buffer-copy + VDP-data transfer loop, while the interpreter is parked at its
+VBlank wait. A transfer that keeps re-running every frame would starve the rest of the
+game - including the per-frame sound tick - which matches the command-stream finding
+(the 68K stops commanding the driver).
+
+Next: find what re-arms this loop every frame (a transfer-request flag that never
+clears, or a VDP status bit the game polls).
