@@ -1055,3 +1055,26 @@ State of the sound investigation, unchanged in substance:
 - the recompiled 68K never retries the driver (2 Z80 reads total after the pause)
 - all timing hypotheses (timer guard, span batching, bus sync, 8/32/128-slice
   interleaving) tested and disproven
+
+### 2026-11-16: trace instrumentation status (stale-address caveat)
+
+The generator now passes the emission loop's `pc` into emit_instr (new trailing
+`ins_addr` parameter) and uses it for the per-instruction trace, so the ordinary
+instruction path logs real addresses (verified: `GEN_TRACE(0x000D92u, 10)` next to its
+`/* $000D92 */` comment). Boot hashes unchanged.
+
+However the frame-1627 recompiled trace still contains 203157 of 262144 entries at a
+single address `$00160E`, and `$00160E` does not appear anywhere in the generated code
+- so those entries come from an emission path that does not set the address and falls
+back to the stale `s_emit_pc` global (the step-runtime / split emitters that receive
+`ins->addr`, which is often 0). Until every emitter passes a real address the
+recompiled trace cannot be compared instruction-for-instruction.
+
+What the traces do show today:
+- interpreter at frame 1627: parked in the VBlank wait ($000BDE/$000BE4), working at $001A0C
+- recompiled at frame 1627: dominated by the un-attributed path above; 106 distinct
+  addresses versus the interpreter's 88
+
+So the comparison is close but not yet trustworthy. Next step: give the step-runtime
+and split-tail emitters the real instruction address (they currently pass ins->addr),
+then re-run the frame-1627 comparison.

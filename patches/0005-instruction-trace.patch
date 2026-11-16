@@ -1,5 +1,5 @@
 diff --git a/profiles/genesis/code_generator.c b/profiles/genesis/code_generator.c
-index 77faaa8..993831a 100644
+index 77faaa8..fea7bae 100644
 --- a/profiles/genesis/code_generator.c
 +++ b/profiles/genesis/code_generator.c
 @@ -31,6 +31,10 @@
@@ -54,7 +54,21 @@ index 77faaa8..993831a 100644
      if (carry_sp_adjust) {
          fprintf(f, "%s{ g_split_sp_popped += _sp_popped; _sp_popped = 0;\n", indent);
          fprintf(f, "%s  recomp_tail_call(%s);\n", indent, addr_expr);
-@@ -2021,13 +2029,22 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -1969,8 +1977,11 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+                         bool *skip_until_label,
+                         int *has_sp_adjust,
+                         const char *func_name,
+-                        uint32_t func_addr, bool step_runtime) {
+-    uint32_t addr = instr->addr;
++                        uint32_t func_addr, bool step_runtime,
++                        uint32_t ins_addr) {
++    /* The decoded struct's addr is not always populated by the scan, so trust the
++     * address the emission loop hands in (it is the same != used for labels). */
++    uint32_t addr = ins_addr ? ins_addr : instr->addr;
+     M68KSize sz   = instr->size;
+     s_diag_func_name = func_name;
+     s_diag_func_addr = func_addr;
+@@ -2021,13 +2032,22 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
           * through the C callers; a boolean loses the second unwind and
           * resumes code the guest deliberately skipped. Tail edges do not
           * consume this count; each actual JSR/BSR caller consumes one. */
@@ -75,74 +89,74 @@ index 77faaa8..993831a 100644
              fprintf(f, "  if (g_split_sp_popped >= 4) { g_rte_pending = g_split_sp_popped / 4; g_split_sp_popped = 0; }\n");
          }
 -        emit_cycle_accounting(f, "  ", estimate_cycles(instr));
-+        emit_cycle_accounting(f, "  ", estimate_cycles(instr), instr->addr);
++        emit_cycle_accounting(f, "  ", estimate_cycles(instr), addr);
          fprintf(f, "  return;\n");
          *skip_until_label = true;
          break;
-@@ -2049,7 +2066,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2049,7 +2069,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
           * need to be reinstated as the sole SR restore mechanism. */
          fprintf(f, "  g_cpu.SR = (uint16_t)m68k_read16(g_cpu.A[7]); g_cpu.A[7] += 2; /* RTE: pop SR */\n");
          fprintf(f, "  g_cpu.PC = m68k_read32(g_cpu.A[7]);            g_cpu.A[7] += 4; /* RTE: pop PC */\n");
 -        emit_cycle_accounting(f, "  ", estimate_cycles(instr));
-+        emit_cycle_accounting(f, "  ", estimate_cycles(instr), instr->addr);
++        emit_cycle_accounting(f, "  ", estimate_cycles(instr), addr);
          fprintf(f, "  g_rte_pending = 1; return; /* RTE */\n");
          *skip_until_label = true;
          break;
-@@ -2070,7 +2087,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2070,7 +2090,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
           * real SR + yield semantics. */
          fprintf(f, "  g_cpu.SR = (uint16_t)0x%04Xu;\n",
                  (unsigned)(instr->imm32 & 0xFFFFu));
 -        emit_cycle_accounting(f, "  ", estimate_cycles(instr));
-+        emit_cycle_accounting(f, "  ", estimate_cycles(instr), instr->addr);
++        emit_cycle_accounting(f, "  ", estimate_cycles(instr), addr);
          fprintf(f, "  genesis_stop_until_interrupt((uint16_t)0x%04Xu);\n",
                  (unsigned)(instr->imm32 & 0xFFFFu));
          fprintf(f, "  return; /* STOP — yield+return, see comment above */\n");
-@@ -2115,7 +2132,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2115,7 +2135,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
              fprintf(f, "    if (g_rte_pending) --g_rte_pending; /* consume the handler's RTE */\n");
              fprintf(f, "  }\n");
          } else {
 -            emit_cycle_accounting(f, "  ", estimate_cycles(instr));
-+            emit_cycle_accounting(f, "  ", estimate_cycles(instr), instr->addr);
++            emit_cycle_accounting(f, "  ", estimate_cycles(instr), addr);
              fprintf(f, "  m68k_trap_vector(0x%02Xu); return;\n", 0x20u + trap_num);
              *skip_until_label = true;
          }
-@@ -2126,7 +2143,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2126,7 +2146,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
      case MN_TRAPV:
          /* Vector 7 — only fires when V is set. Falls through otherwise. */
          fprintf(f, "  if (g_cpu.SR & %s) {\n", SR_V);
 -        emit_cycle_accounting(f, "    ", estimate_cycles(instr));
-+        emit_cycle_accounting(f, "    ", estimate_cycles(instr), instr->addr);
++        emit_cycle_accounting(f, "    ", estimate_cycles(instr), addr);
          fprintf(f, "    m68k_trap_vector(7u); return;\n");
          fprintf(f, "  }\n");
          break;
-@@ -2139,7 +2156,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2139,7 +2159,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
          fprintf(f, "  { uint16_t _ccrw = (uint16_t)m68k_read16(g_cpu.A[7]); g_cpu.A[7] += 2;\n");
          fprintf(f, "    g_cpu.SR = (uint16_t)((g_cpu.SR & 0xFF00u) | (_ccrw & 0x00FFu)); }\n");
          fprintf(f, "  g_cpu.PC = m68k_read32(g_cpu.A[7]); g_cpu.A[7] += 4;\n");
 -        emit_cycle_accounting(f, "  ", estimate_cycles(instr));
-+        emit_cycle_accounting(f, "  ", estimate_cycles(instr), instr->addr);
++        emit_cycle_accounting(f, "  ", estimate_cycles(instr), addr);
          fprintf(f, "  g_rte_pending = 1; return; /* RTR */\n");
          *skip_until_label = true;
          break;
-@@ -2159,7 +2176,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2159,7 +2179,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
      /* ------------------------------------------------------------------ */
      case MN_ILLEGAL:
          /* 0x4AFC, A-line, F-line — runtime picks the right vector. */
 -        emit_cycle_accounting(f, "  ", estimate_cycles(instr));
-+        emit_cycle_accounting(f, "  ", estimate_cycles(instr), instr->addr);
++        emit_cycle_accounting(f, "  ", estimate_cycles(instr), addr);
          fprintf(f, "  m68k_illegal_trap(0x%06Xu, 0x%04Xu); return;\n",
                  addr, (unsigned)instr->words[0]);
          *skip_until_label = true;
-@@ -2214,7 +2231,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2214,7 +2234,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
              fprintf(f, "    g_split_sp_popped = _saved_split_sp_popped;\n");
              fprintf(f, "  }\n");
              fprintf(f, "  g_rte_pending = 0; /* callee captured our return; handled here */\n");
 -            emit_cycle_accounting(f, "  ", estimate_cycles(instr));
-+            emit_cycle_accounting(f, "  ", estimate_cycles(instr), instr->addr);
++            emit_cycle_accounting(f, "  ", estimate_cycles(instr), addr);
              fprintf(f, "  return; /* callee captured return addr: no pop, no fall-through */\n");
              *skip_until_label = true;
              break;
-@@ -2244,6 +2261,15 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2244,6 +2264,15 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
              fprintf(f, "    recomp_call_addr(%s);\n", ae);
              fprintf(f, "    g_split_sp_popped = _saved_split_sp_popped;\n");
              fprintf(f, "  }\n");
@@ -158,128 +172,146 @@ index 77faaa8..993831a 100644
          } else {
              codegen_diag_record(CGD_TODO_DYNAMIC_JSR_UNSUPPORTED, addr,
                                  instr->words[0], instr->mnemonic,
-@@ -2285,7 +2311,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2285,7 +2314,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
           * pop keeps A7 in sync with hardware. Consume one skipped return
           * slot; additional skipped slots continue through outer callers. */
          fprintf(f, "  if (g_rte_pending) { --g_rte_pending;\n");
 -        emit_cycle_accounting(f, "    ", estimate_cycles(instr));
-+        emit_cycle_accounting(f, "    ", estimate_cycles(instr), instr->addr);
++        emit_cycle_accounting(f, "    ", estimate_cycles(instr), addr);
          fprintf(f, "    return; } /* RTE/skip propagation (pre-pop) */\n");
          fprintf(f,
                  "  if (g_cpu.A[7] != (uint32_t)(_jsr_slot_sp_%06X + 4u))\n"
-@@ -2305,7 +2331,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2305,7 +2334,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
              audit_record(instr->addr, func_addr, instr->target_addr,
                           JMPAUDIT_STATIC_TARGET, 0);
              if (addrset_contains(instrs, instr->target_addr)) {
 -                emit_cycle_accounting(f, "  ", estimate_cycles(instr));
-+                emit_cycle_accounting(f, "  ", estimate_cycles(instr), instr->addr);
++                emit_cycle_accounting(f, "  ", estimate_cycles(instr), addr);
                  fprintf(f, "  goto label_%06X;\n", instr->target_addr);
              } else {
                  emit_split_tail_call(f, rom,"  ", instr->target_addr, *has_sp_adjust != 0,
-@@ -2356,7 +2382,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2356,7 +2385,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
                               JMPAUDIT_IN_FUNCTION_SWITCH, npc);
                  fprintf(f, "  /* JMP table at $%06X: in-function dispatch — base $%06X + %s[%d], %d targets (Duff's device) */\n",
                          instr->addr, base, xr + 6 /* skip "g_cpu." */, xreg, npc);
 -                emit_cycle_accounting(f, "  ", estimate_cycles(instr));
-+                emit_cycle_accounting(f, "  ", estimate_cycles(instr), instr->addr);
++                emit_cycle_accounting(f, "  ", estimate_cycles(instr), addr);
                  fprintf(f, "  switch ((int32_t)m68k_brief_index_value(0x%04Xu, "
                          "g_cpu.D[%d], g_cpu.A[%d])) {\n", ext, xreg, xreg);
                  { int32_t seen_offsets[512]; int seen_count = 0;
-@@ -2382,7 +2408,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2382,7 +2411,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
                               JMPAUDIT_IN_FUNCTION_SWITCH, not_);
                  fprintf(f, "  /* JMP table at $%06X: in-function dispatch — base $%06X + %s[%d], %d targets (offset table) */\n",
                          instr->addr, base, xr + 6 /* skip "g_cpu." */, xreg, not_);
 -                emit_cycle_accounting(f, "  ", estimate_cycles(instr));
-+                emit_cycle_accounting(f, "  ", estimate_cycles(instr), instr->addr);
++                emit_cycle_accounting(f, "  ", estimate_cycles(instr), addr);
                  fprintf(f, "  switch ((int32_t)m68k_brief_index_value(0x%04Xu, "
                          "g_cpu.D[%d], g_cpu.A[%d])) {\n", ext, xreg, xreg);
                  { int seen_offsets[512]; int seen_count = 0;
-@@ -2404,7 +2430,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2404,7 +2433,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
                               JMPAUDIT_FALLBACK_HYBRID, 0);
                  fprintf(f, "  /* JMP table at $%06X: interpret handler at base $%06X + %s[%d] */\n",
                          instr->addr, base, xr + 6 /* skip "g_cpu." */, xreg);
 -                emit_cycle_accounting(f, "  ", estimate_cycles(instr));
-+                emit_cycle_accounting(f, "  ", estimate_cycles(instr), instr->addr);
++                emit_cycle_accounting(f, "  ", estimate_cycles(instr), addr);
                  fprintf(f, "  hybrid_jmp_interpret(0x%08Xu + "
                          "m68k_brief_index_value(0x%04Xu, g_cpu.D[%d], g_cpu.A[%d]));\n",
                          base, ext, xreg, xreg);
-@@ -2416,7 +2442,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2416,7 +2445,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
              codegen_diag_record(CGD_TODO_DYNAMIC_JMP_UNSUPPORTED, addr,
                                  instr->words[0], MN_JMP,
                                  func_name, func_addr);
 -            emit_cycle_accounting(f, "  ", estimate_cycles(instr));
-+            emit_cycle_accounting(f, "  ", estimate_cycles(instr), instr->addr);
++            emit_cycle_accounting(f, "  ", estimate_cycles(instr), addr);
              fprintf(f, "  /* TODO: dynamic JMP mode %d/%d */ return;\n", mode, reg);
          }
          *skip_until_label = true;
-@@ -2427,7 +2453,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2427,7 +2456,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
      case MN_BRA:
          if (instr->has_target) {
              if (addrset_contains(instrs, instr->target_addr)) {
 -                emit_cycle_accounting(f, "  ", estimate_cycles(instr));
-+                emit_cycle_accounting(f, "  ", estimate_cycles(instr), instr->addr);
++                emit_cycle_accounting(f, "  ", estimate_cycles(instr), addr);
                  fprintf(f, "  goto label_%06X;\n", instr->target_addr);
              } else {
                  emit_split_tail_call(f, rom,"  ", instr->target_addr, *has_sp_adjust != 0,
-@@ -2437,7 +2463,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2437,7 +2466,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
              codegen_diag_record(CGD_BRANCH_WITHOUT_TARGET, addr,
                                  instr->words[0], MN_BRA,
                                  func_name, func_addr);
 -            emit_cycle_accounting(f, "  ", estimate_cycles(instr));
-+            emit_cycle_accounting(f, "  ", estimate_cycles(instr), instr->addr);
++            emit_cycle_accounting(f, "  ", estimate_cycles(instr), addr);
              fprintf(f, "  /* BRA with no target */ return;\n");
          }
          *skip_until_label = true;
-@@ -2496,13 +2522,13 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2496,13 +2525,13 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
                   * Falls through naturally when the flag is clear. */
                  if (addrset_contains(instrs, instr->target_addr)) {
                      fprintf(f, "  if (%s) {\n", ce);
 -                    emit_cycle_accounting(f, "    ", estimate_cycles(instr));
-+                    emit_cycle_accounting(f, "    ", estimate_cycles(instr), instr->addr);
++                    emit_cycle_accounting(f, "    ", estimate_cycles(instr), addr);
                      fprintf(f, "    glue_yield_for_interrupt_poll(); goto label_%06X;\n",
                              instr->target_addr);
                      fprintf(f, "  }\n");
                  } else {
                      fprintf(f, "  if (%s) {\n", ce);
 -                    emit_cycle_accounting(f, "    ", estimate_cycles(instr));
-+                    emit_cycle_accounting(f, "    ", estimate_cycles(instr), instr->addr);
++                    emit_cycle_accounting(f, "    ", estimate_cycles(instr), addr);
                      fprintf(f, "    glue_yield_for_interrupt_poll();\n");
                      emit_split_tail_call(f, rom,"    ", instr->target_addr, *has_sp_adjust != 0,
                                           -1);
-@@ -2511,7 +2537,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2511,7 +2540,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
                  g_yield_in_next_bne = false;
              } else if (addrset_contains(instrs, instr->target_addr)) {
                  fprintf(f, "  if (%s) {\n", ce);
 -                emit_cycle_accounting(f, "    ", estimate_cycles(instr));
-+                emit_cycle_accounting(f, "    ", estimate_cycles(instr), instr->addr);
++                emit_cycle_accounting(f, "    ", estimate_cycles(instr), addr);
                  fprintf(f, "    goto label_%06X;\n", instr->target_addr);
                  fprintf(f, "  }\n");
              } else {
-@@ -2542,7 +2568,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -2542,7 +2571,7 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
          fprintf(f, "    if ((int16_t)g_cpu.D[%d] != -1) {\n", dreg);
          if (instr->has_target) {
              if (addrset_contains(instrs, instr->target_addr)) {
 -                emit_cycle_accounting(f, "      ", estimate_cycles(instr));
-+                emit_cycle_accounting(f, "      ", estimate_cycles(instr), instr->addr);
++                emit_cycle_accounting(f, "      ", estimate_cycles(instr), addr);
                  fprintf(f, "      goto label_%06X;\n", instr->target_addr);
              } else {
                  emit_split_tail_call(f, rom,"      ", instr->target_addr, *has_sp_adjust != 0,
-@@ -3766,12 +3792,12 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
+@@ -3766,12 +3795,12 @@ static void emit_instr(FILE *f, const GenesisRom *rom,
              "    int16_t _val   = (int16_t)g_cpu.D[%d];\n"
              "    if (_val < 0)        { g_cpu.SR |= %s;\n",
              src_expr, dn, SR_N);
 -        emit_cycle_accounting(f, "      ", estimate_cycles(instr));
-+        emit_cycle_accounting(f, "      ", estimate_cycles(instr), instr->addr);
++        emit_cycle_accounting(f, "      ", estimate_cycles(instr), addr);
          fprintf(f,
              "      m68k_trap_vector(6u); return; }\n"
              "    if (_val > _bound)   { g_cpu.SR &= ~%s;\n",
              SR_N);
 -        emit_cycle_accounting(f, "      ", estimate_cycles(instr));
-+        emit_cycle_accounting(f, "      ", estimate_cycles(instr), instr->addr);
++        emit_cycle_accounting(f, "      ", estimate_cycles(instr), addr);
          fprintf(f,
              "      m68k_trap_vector(6u); return; }\n"
              "  }\n");
-@@ -5095,6 +5121,7 @@ bool codegen_emit(const GenesisRom *rom, const FunctionList *funcs,
+@@ -4236,7 +4265,7 @@ bool codegen_emit_step_semantics(FILE *f, const GenesisRom *rom,
+     AddrSet instructions = {0};
+     bool skip = false;
+     int stack_accounting = 0;
+-    emit_instr(f, rom, ins, &instructions, &skip, &stack_accounting, "<step>", ins->addr, false);
++    emit_instr(f, rom, ins, &instructions, &skip, &stack_accounting, "<step>", ins->addr, false, ins->addr);
+     s_ws_sites = saved_sites; s_ws_site_count = saved_count;
+     s_reverse_debug = saved_reverse;
+     s_diag_func_name = saved_name; s_diag_func_addr = saved_addr; s_diag_instr = saved_ins;
+@@ -4334,7 +4363,7 @@ static bool emit_step_control(FILE *f,const GenesisRom *rom,const M68KInstr *ins
+         /* Nominal nonzero costs; data-dependent divide timing still needs
+          * qualification. Zero division enters the real vector-five frame. */
+         fprintf(f,"  ctx->charge=%u;\n",(ins->mnemonic==MN_DIVU?140u:158u)+step_operand_cost((unsigned)ins->src_ea,false));
+-        emit_instr(f,rom,ins,&instructions,&skip,&stack_accounting,"<step>",ins->addr,true);
++        emit_instr(f,rom,ins,&instructions,&skip,&stack_accounting,"<step>",ins->addr,true,ins->addr);
+         addrset_free(&instructions);return !skip;
+     }
+     case MN_CHK: {
+@@ -5095,6 +5124,7 @@ bool codegen_emit(const GenesisRom *rom, const FunctionList *funcs,
           *                             at $03AD0C / $03AD2A). */
          for (int j = 0; j < instrs.count; j++) {
              uint32_t pc = instrs.addrs[j];
@@ -287,7 +319,7 @@ index 77faaa8..993831a 100644
              M68KInstr probe;
              if (!m68k_decode(rom, pc, &probe)) continue;
              if (probe.mnemonic != MN_JMP) continue;
-@@ -5162,6 +5189,7 @@ bool codegen_emit(const GenesisRom *rom, const FunctionList *funcs,
+@@ -5162,6 +5192,7 @@ bool codegen_emit(const GenesisRom *rom, const FunctionList *funcs,
           * cannot be classified as either an ordinary or an unconditional
           * return-capturing callee at the call site. */
          int has_sp_adjust = 0;
@@ -295,7 +327,7 @@ index 77faaa8..993831a 100644
          for (int j = 0; j < instrs.count; j++) {
              M68KInstr pre;
              if (m68k_decode(rom, instrs.addrs[j], &pre)) {
-@@ -5169,6 +5197,7 @@ bool codegen_emit(const GenesisRom *rom, const FunctionList *funcs,
+@@ -5169,6 +5200,7 @@ bool codegen_emit(const GenesisRom *rom, const FunctionList *funcs,
                      ((pre.src_ea >> 3) & 7) == 1 && (pre.src_ea & 7) == 7 &&
                      pre.imm32 > 0) {
                      has_sp_adjust = 1;
@@ -303,7 +335,7 @@ index 77faaa8..993831a 100644
                      break;
                  }
                  if ((pre.mnemonic == MN_MOVE || pre.mnemonic == MN_MOVEA)
-@@ -5198,6 +5227,7 @@ bool codegen_emit(const GenesisRom *rom, const FunctionList *funcs,
+@@ -5198,6 +5230,7 @@ bool codegen_emit(const GenesisRom *rom, const FunctionList *funcs,
                  }
              }
          }
@@ -311,7 +343,16 @@ index 77faaa8..993831a 100644
          if (has_sp_adjust) {
              /* A generated split-function tail call is one 68K control-flow
               * path, not a real JSR boundary.  Consume its carried net stack
-@@ -5388,7 +5418,7 @@ bool codegen_emit(const GenesisRom *rom, const FunctionList *funcs,
+@@ -5378,7 +5411,7 @@ bool codegen_emit(const GenesisRom *rom, const FunctionList *funcs,
+             if (s_reverse_debug)
+                 fprintf(f_func, "  rdb_on_insn(0x%06Xu);\n", pc);
+             emit_instr(f_func, rom, &instr, &instrs, &skip_until_label, &has_sp_adjust,
+-                       name, func_addr, false);
++                       name, func_addr, false, pc);
+ 
+             /* Contextual recompiler: accumulate cycles and check for
+              * pending VBlank.  The runtime maintains g_cycle_accumulator
+@@ -5388,7 +5421,7 @@ bool codegen_emit(const GenesisRom *rom, const FunctionList *funcs,
               * matching the interpreter's interrupt-driven behavior. */
              {
                  int cyc = estimate_cycles(&instr);
