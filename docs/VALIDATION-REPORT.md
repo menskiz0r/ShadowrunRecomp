@@ -1113,3 +1113,29 @@ game - including the per-frame sound tick - which matches the command-stream fin
 
 Next: find what re-arms this loop every frame (a transfer-request flag that never
 clears, or a VDP status bit the game polls).
+
+### 2026-11-16: the handshake byte differs, and that is why the game gives up
+
+Found the sound handshake routine by searching the ROM for the mailbox address it
+uses ($A00036): one reference, `$052E5C lea.l $a00036.l,a0`, inside the routine at
+$052E4E that pops its return address into a0, takes BUSREQ, polls the ack, and reads
+one response byte.
+
+Comparing mailbox reads on the replay:
+
+```
+interpreter: f=3382 val=3F   f=3389 val=02   then f=4407 val=05, 4408 08, 4465 0B, ...
+recompiled : f=3382 val=1C   f=3389 val=1F   then nothing at all
+```
+
+So at the scene-change handshake the recompiled build reads a different driver response
+(1C/1F vs 3F/02) and afterwards never calls the read routine again - the game concludes
+the driver is not responding and stops commanding it, which is exactly the command-stream
+stop measured earlier.
+
+This connects every previous observation: driver state diverges during the earlier scene
+transition -> the handshake byte is wrong at the re-init -> the game abandons the sound
+driver -> no more music commands -> music dies while SFX continue.
+
+Remaining question: why the driver's response byte differs at that moment (the Z80 RAM
+state it reads from), which is the same state divergence tracked from frame 25.
