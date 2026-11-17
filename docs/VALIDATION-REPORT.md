@@ -1536,3 +1536,21 @@ no dropouts (per-second RMS 380-2058), so it is a timing/voicing problem rather 
 noise. The YM timer A only raises its status flag here; the Z80 IRQ line is still only
 wired for VBlank (`genesis_machine.c` asserts it at V-int), which is the next thing to
 check if the driver expects an interrupt rather than polling.
+
+### 2026-11-18: YM timer overflow now sets the flag unconditionally and raises the Z80 IRQ
+
+The timer model set the status flag only when the register-$27 enable bit was set, and
+never raised the Z80 interrupt at all (only the V-int was wired, in
+`genesis_machine.c`). On the real chip the overflow always sets the flag and the enable
+bit gates the interrupt, so a driver that counts timer ticks saw them late and could miss
+them - consistent with music that races and loses its melody.
+
+Changed:
+- timer A and timer B overflow set their status bit unconditionally
+- the enable bits (`$27` bit 2 / bit 3) gate `ym_raise_z80_irq()`, which asserts the
+  same `int_pending` path the V-int uses (`z80_recomp_assert_irq` in recomp builds)
+
+Verified: boot hashes unchanged (7258/EE92/64B0/D843/5F8D/11C1 - audio timing does not
+affect the video state), music continuous (FM thirds 6604/6604/3911/4009), and a
+pre-resample capture of the intro-to-ambush transition shows no clipping, no large
+sample discontinuities and a musical onset rate (~5.5/s) in both FM and PSG.
