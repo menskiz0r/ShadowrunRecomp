@@ -1465,3 +1465,42 @@ Disabling the directive (so the real body runs):
 
 The intro text-card duration still differs from the interpreter at matched game clocks,
 so this is a real fidelity fix but not yet the whole scene-skip cause.
+
+### 2026-11-18: scene skip FIXED - the vblank_yield shortcut dropped ROM side effects
+
+Root cause confirmed. `game.toml` declared `vblank_yield_addr = 0x000BD2`, and the
+generator replaces a declared wait function wholesale with
+`g_cpu.SR = 0x2300; glue_yield_for_vblank();`. Shadowrun's routine is not the
+Sonic-style `move/tst.b/bne self/rts` idiom the shortcut assumes:
+
+```
+000BD2  addq.w #1,$FFDF88      ; per-wait counter the game reads
+000BD8  move.w $FFF9F6,d7
+000BDE  cmp.w  $FFF9EE,d7
+000BE4  beq.b  $000BDE
+000BE6  move.w $FFF9EE,$FFF9F6
+000BF0  rts
+```
+
+Dropping the `addq.w` and the `$FFF9F6` bookkeeping made every wait-loop in the game
+complete sooner than the ROM allows, so VBlank-paced cutscenes advanced faster and the
+intro jumped from the twilight card straight to the ambush.
+
+Fix: remove the `vblank_yield_addr` directive so the real body executes.
+
+Validation (deterministic input script: title -> menu -> intro, START only, screenshots
+plus RAM dumps every 20 frames, matched by the game VBlank counter):
+
+```
+intro screens at matched game clocks: 45 / 45 identical to the interpreter
+wait counter $FFDF88:                 within 2 counts across 2757 common game frames
+music (FM thirds):                    7247 / 7247 / 4700 / 4876   (continuous)
+boot hashes: 7258 / EE92 / 64B0 / D843 / 5F8D / 11C1  (frames 1000-4000 changed because
+the dropped side effects now happen; 5000/6000 unchanged)
+```
+
+Methodology note: an earlier scripted reproducer used two `A` presses after START and
+appeared to show the port skipping the text cards. Button presses advance the intro text
+by design, and the presses landed at different game times in the two backends; with
+START-only input the sequences are identical. Check the input script before concluding a
+scene is skipped.
