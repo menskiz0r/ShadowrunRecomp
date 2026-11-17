@@ -1554,3 +1554,21 @@ Verified: boot hashes unchanged (7258/EE92/64B0/D843/5F8D/11C1 - audio timing do
 affect the video state), music continuous (FM thirds 6604/6604/3911/4009), and a
 pre-resample capture of the intro-to-ambush transition shows no clipping, no large
 sample discontinuities and a musical onset rate (~5.5/s) in both FM and PSG.
+
+### 2026-11-18: FM timers advance on the schedule, not on polls
+
+Instrumented the timer: Shadowrun's driver loads timer A with TA=0, i.e. period
+(1024 - 0) * 1008 = 1,032,192 master cycles = 52.0 Hz - a music-tempo tick. The model was
+lazy: it only evaluated the timer when the Z80 read the status register or wrote the YM,
+and each call collapsed every elapsed period into a single event. Measured rate: 8.1
+fired-but-coalesced events per second instead of 52, so a driver counting ticks could not
+keep time (fast/uneven tempo, garbled output once several voices are active).
+
+Fix: `gbus_ym_timer_service()` is called once per scanline from the machine loop with the
+absolute master-cycle stamp, and delivers one flag + interrupt per elapsed period (bounded
+catch-up). The lazy status-read path uses the same loop, so it stays consistent.
+
+Measured after the change: 2059 timer events over the 39.6 s the timer is loaded =
+**52.0/s**, exactly the chip rate (previously 8.1/s). Boot hashes unchanged
+(7258/EE92/64B0/D843/5F8D/11C1); FM thirds 5848/5021/3996 (continuous); no clipping,
+no sample discontinuities.
