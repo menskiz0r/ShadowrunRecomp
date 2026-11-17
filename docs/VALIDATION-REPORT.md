@@ -1598,3 +1598,28 @@ does. That determines the correct tempo.
 Also relevant: the track itself is chosen by the game's RNG, whose seed is a checksum of
 work RAM at boot, so the port can legitimately play a different track than a given
 playthrough video. For A/B comparison both backends were run with `GENESIS_FORCE_SEED`.
+
+### 2026-11-18: crackle is a real-time starvation, not synthesis
+
+Measured with `GENESIS_FRAMETIME_LOG` (CPU per frame) over the intro + ambush script:
+
+```
+mean 17.0 ms/frame, median 17.0 ms, p95 17.0 ms, max 102 ms
+budget for 60 fps: 16.68 ms
+wall-clock: 2600 frames in 44.55 s = 58.4 fps
+```
+
+The FM and PSG streams themselves are clean in a pre-resample capture (no clipping, zero
+large sample discontinuities, correct 888.7 FM samples/frame), so the crackle comes from
+the device path concealing a continuous ~2.6% audio shortfall, plus long hitches (up to
+100 ms) at scene loads.
+
+Also measured, for the tempo question:
+- driver loads timer A via `$27 = $05` (load + IRQ enable) and never writes `$24`/`$25`,
+  so the chip period is TA=0 -> 52 Hz; our scanline service now delivers 52.0 f/s
+- raising the Z80 timer interrupt inflates the driver's note rate by ~52 %
+  (18.7 -> 28.4 key-ons/s); it is therefore opt-in (`GENESIS_YM_TIMER_IRQ`) and off
+- with the interrupt off, port and interpreter agree on note timing (1.75 frames/note)
+
+Next: reduce per-frame cost to get under 16.68 ms (or shorten the load hitches), since
+the audio starvation is a consequence of running below the frame rate.
