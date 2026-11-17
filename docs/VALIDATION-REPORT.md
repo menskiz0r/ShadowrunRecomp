@@ -1333,3 +1333,45 @@ driver starts at a different phase and stays offset.
 Next step: examine why the ring index is already 0x10 vs 0x00 at game frame 2 - i.e.
 which 68K writes reached the ring before that point, and whether the driver's first
 init pass ran at a different line within the frame.
+
+### 2026-11-17: FIXED - the YM2612 timer A was never implemented
+
+Instrumented the YM status path and counted status polls and timer-overflow flags:
+
+```
+recompiled : ym status reads 9245535, timer-B flag seen 0
+interpreter: ym status reads 6014540, timer-B flag seen 0
+```
+
+Neither backend ever raised an overflow flag, while the driver polls the status register
+millions of times - it was waiting for a timer that never fired. Logging the timer
+programming showed which timer the driver actually uses:
+
+```
+[YMREG] f=227  reg=27 val=05
+[YMREG] f=1516 reg=27 val=45
+[YMREG] f=1628 reg=24 val=FE
+[YMREG] f=1628 reg=25 val=01
+[YMREG] f=1628 reg=27 val=55
+```
+
+Register $27 bit 0 (load/run timer A) and bit 2 (enable timer A flag) are set, and
+$24/$25 program timer A - not timer B. The bus model in `runner/video/genesis_bus.c`
+implemented only timer B (its comment says only B "is currently needed by supported
+software", true for the Sonic titles and false for Shadowrun).
+
+Implemented timer A following ymfm's formula (`ymfm_fm.ipp`: period = (1024 - TA) * 144
+YM clocks, i.e. (1024 - TA) * 1008 master cycles at the 7:1 master/YM ratio the file
+already uses for timer B's 16128 constant): register $24/$25 latches, bit 0 load/run,
+bit 2 flag enable, bit 4 flag reset, status bit 0.
+
+Result on the reference replay:
+
+```
+before: FM thirds [6570, 6570, 383, 383]     (music died in the first third)
+after : FM thirds [6570, 6570, 6353, 4127]   (music continues through the session)
+```
+
+All six boot hashes unchanged (45E5/E29B/06B5/29F9/5F8D/11C1), the combat replay still
+matches all 5042 inputs with an empty interior-label miss list, and two paced replays
+produce bit-identical audio.

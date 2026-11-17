@@ -1,10 +1,10 @@
 diff --git a/external/m68k-recomp-core b/external/m68k-recomp-core
-index 88963f2..0069849 160000
+index 88963f2..ddae973 160000
 --- a/external/m68k-recomp-core
 +++ b/external/m68k-recomp-core
 @@ -1 +1 @@
 -Subproject commit 88963f28d04904525a378f75dc1cd2ebb3add773
-+Subproject commit 0069849f2c699001b7bc4cbe9679dcff645dca2f-dirty
++Subproject commit ddae973072ce7ec56407a89d1d7a3e6a94e1487e-dirty
 diff --git a/external/rbengine b/external/rbengine
 index b29bdde..28a2a47 160000
 --- a/external/rbengine
@@ -306,10 +306,20 @@ index ba1174a..59dc93a 100644
  #define GEN_NATIVE_REGISTER_SPAN_READY(cycles, count) \
      genesis_native_register_span_ready((cycles), (count))
 diff --git a/runner/m68k_interp.c b/runner/m68k_interp.c
-index 1290d52..34303aa 100644
+index 1290d52..c7adb60 100644
 --- a/runner/m68k_interp.c
 +++ b/runner/m68k_interp.c
-@@ -1312,6 +1312,7 @@ static void interp_account_cycles(const M68KInstr *ins) {
+@@ -13,7 +13,8 @@
+  * mis-executes. Widening coverage is purely additive and always safe.
+  */
+ #include "m68k_interp.h"
+-#include "m68k_decoder.h"   /* recompiler/src — added to the runner include path */
++#include "m68k_decoder.h"
++uint32_t g_interp_pc = 0;   /* address of the instruction being executed (diagnostic) */   /* recompiler/src — added to the runner include path */
+ #include "rom_parser.h"     /* GenesisRom, rom_read* (decoder's fetch source)    */
+ #ifdef GENESIS_COSIM
+ #include "game_cycles.h"    /* game_insn_cost — clown-measured baked costs        */
+@@ -1312,6 +1313,7 @@ static void interp_account_cycles(const M68KInstr *ins) {
      g_audio_cycle_counter += (uint32_t)cyc;
      if (g_cycle_accumulator >= g_vblank_threshold)
          glue_check_vblank();
@@ -317,6 +327,61 @@ index 1290d52..34303aa 100644
      /* Differential co-sim: advance the same monotonic checkpoint axis the
       * recompiled backend advances via emit_cycle_accounting's GEN_COSIM_TICK,
       * with the identical per-instruction cost — so both backends park at the
+@@ -1336,10 +1338,11 @@ M68kiStatus m68k_interp_step(void) {
+     }
+     uint32_t next;
+     s_illegal_ea = 0;
++    g_interp_pc = ins.addr;
+     M68kiStatus st = exec_one(&ins, &next);
+     if (st != M68KI_OK) return st;
+     if (s_illegal_ea) {                       /* illegal An-destination encoding */
+-        g_m68ki_bad_pc = ins.addr; g_m68ki_bad_op = ins.words[0];
++        g_interp_pc = ins.addr; g_m68ki_bad_pc = ins.addr; g_m68ki_bad_op = ins.words[0];
+         return M68KI_HALT_UNIMPL;
+     }
+     g_cpu.PC = next & 0xFFFFFFu;
+@@ -1437,10 +1440,11 @@ M68kiStatus m68k_interp_run_framed(uint32_t entry_pc, uint32_t *out_exit_pc) {
+ 
+         uint32_t next;
+         s_illegal_ea = 0;
+-        M68kiStatus st = exec_one(&ins, &next);
++        g_interp_pc = ins.addr;
++    M68kiStatus st = exec_one(&ins, &next);
+         if (st != M68KI_OK) return st;
+         if (s_illegal_ea) {
+-            g_m68ki_bad_pc = ins.addr; g_m68ki_bad_op = ins.words[0];
++            g_interp_pc = ins.addr; g_m68ki_bad_pc = ins.addr; g_m68ki_bad_op = ins.words[0];
+             return M68KI_HALT_UNIMPL;
+         }
+         g_cpu.PC = next & 0xFFFFFFu;
+@@ -1509,10 +1513,11 @@ M68kiStatus m68k_interp_run_handler(uint32_t entry_pc) {
+ 
+         uint32_t next;
+         s_illegal_ea = 0;
+-        M68kiStatus st = exec_one(&ins, &next);
++        g_interp_pc = ins.addr;
++    M68kiStatus st = exec_one(&ins, &next);
+         if (st != M68KI_OK) return st;
+         if (s_illegal_ea) {
+-            g_m68ki_bad_pc = ins.addr; g_m68ki_bad_op = ins.words[0];
++            g_interp_pc = ins.addr; g_m68ki_bad_pc = ins.addr; g_m68ki_bad_op = ins.words[0];
+             return M68KI_HALT_UNIMPL;
+         }
+         g_cpu.PC = next & 0xFFFFFFu;
+@@ -1607,10 +1612,11 @@ M68kiStatus m68k_interp_run_ram_handler(uint32_t entry_pc, uint32_t *out_exit_pc
+ 
+         uint32_t next;
+         s_illegal_ea = 0;
+-        M68kiStatus st = exec_one(&ins, &next);
++        g_interp_pc = ins.addr;
++    M68kiStatus st = exec_one(&ins, &next);
+         if (st != M68KI_OK) return st;
+         if (s_illegal_ea) {
+-            g_m68ki_bad_pc = ins.addr; g_m68ki_bad_op = ins.words[0];
++            g_interp_pc = ins.addr; g_m68ki_bad_pc = ins.addr; g_m68ki_bad_op = ins.words[0];
+             return M68KI_HALT_UNIMPL;
+         }
+         g_cpu.PC = next & 0xFFFFFFu;
 diff --git a/runner/main.c b/runner/main.c
 index 60a0cce..adc0864 100644
 --- a/runner/main.c
@@ -530,11 +595,26 @@ index 60a0cce..adc0864 100644
      audio_close();
      shadow_worker_cleanup();
      genesis_hd_gpu_destroy(hd_gpu);
+diff --git a/runner/rb_state.c b/runner/rb_state.c
+index 6e4659a..008ac5c 100644
+--- a/runner/rb_state.c
++++ b/runner/rb_state.c
+@@ -40,8 +40,8 @@ _Static_assert(sizeof(g_ram) == 0x10000, "work RAM size changed");
+ #if UINTPTR_MAX == 0xFFFFFFFFFFFFFFFFu
+ /* 64-bit layouts (the host pointers inside are scrubbed by machine_rb_save). */
+ _Static_assert(sizeof(GVDP) == 65824, "GVDP changed: review machine_rb_save (pointers) and rb_state");
+-_Static_assert(sizeof(GenesisBus) == 24664, "GenesisBus changed: review machine_rb_save and rb_state");
+-_Static_assert(sizeof(GenesisMachine) == 90576, "GenesisMachine changed: review machine_rb_save and rb_state");
++_Static_assert(sizeof(GenesisBus) == 24688, "GenesisBus changed: review machine_rb_save and rb_state");
++_Static_assert(sizeof(GenesisMachine) == 90600, "GenesisMachine changed: review machine_rb_save and rb_state");
+ #endif
+ 
+ /* ---- sections ---------------------------------------------------------------- */
 diff --git a/runner/video/genesis_bus.c b/runner/video/genesis_bus.c
-index 6daf1c0..f7eaa97 100644
+index 6daf1c0..ce915fc 100644
 --- a/runner/video/genesis_bus.c
 +++ b/runner/video/genesis_bus.c
-@@ -7,6 +7,22 @@
+@@ -7,6 +7,24 @@
   * genesis_machine.c).
   */
  #include "genesis_bus.h"
@@ -542,6 +622,8 @@ index 6daf1c0..f7eaa97 100644
 +void gbus_68k_z80ram(unsigned off, uint8_t val);
 +#include <stdio.h>
 +#include <stdlib.h>
++unsigned long g_vdp_data_writes = 0;
++unsigned long g_ym_reads = 0, g_ym_tb_seen = 0;   /* 68K writes to the VDP data port */
 +static void z80cmd_log(uint16_t off, uint8_t val);
 +static void z80rd_log(uint32_t a, uint8_t val);
 +/* Log 68K READS of Z80 space (the driver handshake polls) for the sound hunt. */
@@ -557,7 +639,71 @@ index 6daf1c0..f7eaa97 100644
  #include "genesis_expansion.h"
  #include "../audio/event_queue.h"
  #include <string.h>
-@@ -324,6 +340,7 @@ uint16_t gbus_read16(GenesisBus *b, uint32_t a)
+@@ -65,6 +83,7 @@ extern void glue_charge_68k_stall(uint32_t cycles);
+  * needed by supported software. */
+ #define MASTER_CYCLES_PER_FRAME  (262ull * 3420ull)
+ #define YM_TIMER_B_MASTER_TICK   (16ull * 144ull * 7ull)
++#define YM_TIMER_A_MASTER_TICK   (144ull * 7ull)
+ 
+ static uint64_t ym_abs_z80_stamp(void)
+ {
+@@ -78,8 +97,24 @@ static uint64_t ym_abs_68k_stamp(void)
+            (uint64_t)STAMP_68K();
+ }
+ 
++static uint64_t ym_timer_a_period(const GenesisBus *b)
++{
++    unsigned ta = ((unsigned)b->ym_timer_a_hi << 2) | ((unsigned)b->ym_timer_a_lo & 3u);
++    return (uint64_t)(1024u - ta) * YM_TIMER_A_MASTER_TICK;
++}
++
+ static void ym_timer_update(GenesisBus *b, uint64_t now)
+ {
++    /* Timer A (the one Shadowrun's driver uses for its sequencer). */
++    if (b->ym_timer_a_running && b->ym_timer_a_period != 0 &&
++        now >= b->ym_timer_a_deadline) {
++        if (b->ym_mode & 0x04u)         /* enable timer-A overflow flag */
++            b->ym_status |= 0x01u;
++        uint64_t elapsed = now - b->ym_timer_a_deadline;
++        uint64_t periods = elapsed / b->ym_timer_a_period + 1u;
++        b->ym_timer_a_deadline += periods * b->ym_timer_a_period;
++    }
++
+     if (!b->ym_timer_b_running || b->ym_timer_b_period == 0 ||
+         now < b->ym_timer_b_deadline)
+         return;
+@@ -106,7 +141,15 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
+     if (bank != 0) return;              /* timers live in register bank 0 */
+ 
+     uint8_t reg = b->ym_addr[0];
+-    if (reg == 0x26u) {
++    { static int yl = -1;
++      if (yl < 0) { const char *e = getenv("GENESIS_YMREG_LOG"); yl = (e && *e && *e != '0'); }
++      if (yl && (reg == 0x26u || reg == 0x27u || reg == 0x24u || reg == 0x25u))
++          fprintf(stderr, "[YMREG] f=%lu reg=%02X val=%02X\n", g_snd_frame, reg, val); }
++    if (reg == 0x24u) {
++        b->ym_timer_a_hi = val;
++    } else if (reg == 0x25u) {
++        b->ym_timer_a_lo = val & 0x03u;
++    } else if (reg == 0x26u) {
+         b->ym_timer_b = val;
+         b->ym_timer_b_period =
+             (uint64_t)(256u - (unsigned)val) * YM_TIMER_B_MASTER_TICK;
+@@ -117,6 +160,13 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
+         if (val & 0x10u) b->ym_status &= 0xfeu;
+         if (val & 0x20u) b->ym_status &= 0xfdu;
+         b->ym_mode = val;
++        if (val & 0x01u) {                  /* bit 0: load/run timer A */
++            b->ym_timer_a_period = ym_timer_a_period(b);
++            b->ym_timer_a_running = 1;
++            b->ym_timer_a_deadline = now + b->ym_timer_a_period;
++        } else {
++            b->ym_timer_a_running = 0;
++        }
+         if (val & 0x02u) {
+             if (b->ym_timer_b_period == 0)
+                 b->ym_timer_b_period =
+@@ -324,6 +374,7 @@ uint16_t gbus_read16(GenesisBus *b, uint32_t a)
               * driver decompression's back-reference copy (MOVE.B (A4,D4.W),
               * (A5)+) — the S2 silent-audio bug. */
              unsigned off = a & 0x1FFFu;
@@ -565,7 +711,7 @@ index 6daf1c0..f7eaa97 100644
              return (uint16_t)(((uint16_t)b->z80_ram[off] << 8)
                                | b->z80_ram[(off + 1u) & 0x1FFFu]);
          }
-@@ -383,7 +400,7 @@ uint8_t gbus_peek8(const GenesisBus *b, uint32_t a)
+@@ -383,15 +434,50 @@ uint8_t gbus_peek8(const GenesisBus *b, uint32_t a)
  {
      a &= 0xFFFFFFu;
      if (a >= 0xA00000u && a < 0xA10000u && (a & 0xFFFFu) < 0x2000u)
@@ -574,7 +720,50 @@ index 6daf1c0..f7eaa97 100644
      if (sram_hit(b, a))
          return b->sram[a - b->sram_base];
      uint16_t w = gbus_peek16(b, a & ~1u);
-@@ -419,7 +436,7 @@ void gbus_write16(GenesisBus *b, uint32_t a, uint16_t v)
+     return (a & 1) ? (uint8_t)w : (uint8_t)(w >> 8);
+ }
+ 
++
++/* Watch writes to one work-RAM address (GENESIS_RAMW=<hex 24-bit address>). */
++extern uint32_t g_interp_pc;
++static void ramw_log(uint32_t a, unsigned val, int width)
++{
++    static int on = -2; static uint32_t want = 0;
++    extern unsigned long g_snd_frame;
++    if (on == -2) { const char *e = getenv("GENESIS_RAMW");
++                    on = (e && *e) ? 1 : 0;
++                    if (on) want = (uint32_t)strtoul(e, NULL, 16); }
++    if (!on) return;
++    if ((a & 0xFFFFFFu) == want)
++        fprintf(stderr, "[RAMW] f=%lu addr=%06X val=%0*X width=%d pc=%06X\n",
++                g_snd_frame, a & 0xFFFFFFu, width/4, val, width, (unsigned)g_interp_pc);
++}
++
++
++/* Diagnostic: force the first write to the RNG seed ($FFF9F8) so both backends start
++ * with the same random stream (GENESIS_FORCE_SEED=<hex16>). */
++static uint16_t force_seed(uint32_t a, uint16_t v)
++{
++    static int on = -1; static uint16_t want = 0;
++    extern unsigned long g_snd_frame;
++    if (on < 0) { const char *e = getenv("GENESIS_FORCE_SEED");
++                  on = (e && *e) ? 1 : 0;
++                  if (on) want = (uint16_t)strtoul(e, NULL, 16); }
++    if (!on) return v;
++    /* the boot checksum stores the seed during the first ~20 frames */
++    if ((a & 0xFFFFFFu) == 0xFFF9F8u && g_snd_frame <= 20ul) return want;
++    return v;
++}
++
+ void gbus_write16(GenesisBus *b, uint32_t a, uint16_t v)
+ {
++    v = force_seed(a, v);
++    if ((a & 0xFF0000u) == 0xFF0000u) ramw_log(a, v, 16);
++    if ((a & 0xFFFFFFu) >= 0xC00000u && (a & 0xFFFFFFu) < 0xC00004u) g_vdp_data_writes++;
+     a &= 0xFFFFFFu;
+     if (a >= 0xFF0000u) {                                            /* RAM     */
+         uint16_t o = (uint16_t)(a & 0xFFFFu);
+@@ -419,7 +505,7 @@ void gbus_write16(GenesisBus *b, uint32_t a, uint16_t v)
          if ((a & 0xFFFFu) < 0x2000u) { unsigned off = a & 0x1FFFu;
              snd_trace_68k_write((uint16_t)off, b->z80_ram[off], (uint8_t)(v >> 8),
                                  b->z80_busreq, b->z80_reset_off);  /* [SND-TRACE] */
@@ -583,7 +772,16 @@ index 6daf1c0..f7eaa97 100644
          if (a >= 0xA04000u && a <= 0xA04003u) {
              uint8_t port = (uint8_t)(a & 3);
              ym_write_side_effect(b, port, (uint8_t)v, ym_abs_68k_stamp());
-@@ -469,7 +486,7 @@ void gbus_write8(GenesisBus *b, uint32_t a, uint8_t v)
+@@ -462,6 +548,8 @@ uint8_t gbus_read8(GenesisBus *b, uint32_t a)
+ 
+ void gbus_write8(GenesisBus *b, uint32_t a, uint8_t v)
+ {
++    if ((a & 0xFF0000u) == 0xFF0000u) ramw_log(a, v, 8);
++    if ((a & 0xFFFFFFu) >= 0xC00000u && (a & 0xFFFFFFu) < 0xC00004u) g_vdp_data_writes++;
+     a &= 0xFFFFFFu;
+     /* Byte writes to RAM / Z80 RAM / PSG / FM need exact targeting. */
+     if (a >= 0xFF0000u) { g_ram[a & 0xFFFFu] = v; return; }
+@@ -469,7 +557,7 @@ void gbus_write8(GenesisBus *b, uint32_t a, uint8_t v)
          if ((a & 0xFFFFu) < 0x2000u) { unsigned off = a & 0x1FFFu;
              snd_trace_68k_write((uint16_t)off, b->z80_ram[off], v,
                                  b->z80_busreq, b->z80_reset_off);  /* [SND-TRACE] */
@@ -592,7 +790,16 @@ index 6daf1c0..f7eaa97 100644
          if (a >= 0xA04000u && a <= 0xA04003u) {
              uint8_t port = (uint8_t)(a & 3);
              ym_write_side_effect(b, port, v, ym_abs_68k_stamp());
-@@ -499,10 +516,44 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
+@@ -491,6 +579,8 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
+     /* YM2612 status: BUSY is clear; timer flags advance on scheduler time. */
+     if (addr < 0x6000u) {
+         ym_timer_update(b, ym_abs_z80_stamp());
++        g_ym_reads++;
++        if (b->ym_status & 0x02u) g_ym_tb_seen++;
+         return b->ym_status;
+     }
+     if (addr < 0x8000u) return 0xFFu;                               /* bank/PSG   */
+@@ -499,10 +589,51 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
      return gbus_read8(b, a68);
  }
  
@@ -603,8 +810,12 @@ index 6daf1c0..f7eaa97 100644
 +{
 +    static int w = -2;
 +    extern uint16_t g_z80_pc_now;
-+    if (w == -2) { const char *e = getenv("GENESIS_Z80_WATCH"); w = e ? (int)strtoul(e, NULL, 16) : -1; }
-+    if (w >= 0 && (int)off == w) {
++    static int wto = -2;
++    if (w == -2) { const char *e = getenv("GENESIS_Z80_WATCH");
++                   const char *e2 = getenv("GENESIS_Z80_WATCH_TO");
++                   w = e ? (int)strtoul(e, NULL, 16) : -1;
++                   wto = e2 ? (int)strtoul(e2, NULL, 16) : w; }
++    if (w >= 0 && (int)off >= w && (int)off <= wto) {
 +        fprintf(stderr, "[Z80W68K] frame=%u off=%04X val=%02X\n", (unsigned)g_snd_frame, off, val);
 +        fflush(stderr);
 +    }
@@ -627,9 +838,12 @@ index 6daf1c0..f7eaa97 100644
      if (addr < 0x4000u) { unsigned off = addr & 0x1FFFu;
          if (g_sndwatch[off]) snd_trace_z80((uint16_t)off, val, 1);  /* [SND-TRACE] */
 +        { extern uint16_t g_z80_pc_now;
-+          static int w = -2;
-+          if (w == -2) { const char *e = getenv("GENESIS_Z80_WATCH"); w = e ? (int)strtoul(e, NULL, 16) : -1; }
-+          if (w >= 0 && (int)off == w) {
++          static int w = -2, wto = -2;
++          if (w == -2) { const char *e = getenv("GENESIS_Z80_WATCH");
++                         const char *e2 = getenv("GENESIS_Z80_WATCH_TO");
++                         w = e ? (int)strtoul(e, NULL, 16) : -1;
++                         wto = e2 ? (int)strtoul(e2, NULL, 16) : w; }
++          if (w >= 0 && (int)off >= w && (int)off <= wto) {
 +              fprintf(stderr, "[Z80W] frame=%u pc=%04X addr=%04X val=%02X\n",
 +                      (unsigned)g_snd_frame, (unsigned)g_z80_pc_now, off, val);
 +              fflush(stderr);
@@ -637,8 +851,24 @@ index 6daf1c0..f7eaa97 100644
          b->z80_ram[off] = val; return; }                           /* RAM+mirror */
      if (addr < 0x6000u) {
          uint8_t port = (uint8_t)(addr & 3);
+diff --git a/runner/video/genesis_bus.h b/runner/video/genesis_bus.h
+index 5a57082..bb4f679 100644
+--- a/runner/video/genesis_bus.h
++++ b/runner/video/genesis_bus.h
+@@ -49,6 +49,11 @@ typedef struct GenesisBus {
+     uint8_t  ym_timer_b_running;
+     uint64_t ym_timer_b_deadline;       /* absolute scheduler master cycles    */
+     uint64_t ym_timer_b_period;         /* cached period in master cycles      */
++    uint8_t  ym_timer_a_hi;             /* register $24 (timer A high 8 bits)  */
++    uint8_t  ym_timer_a_lo;             /* register $25 (timer A low 2 bits)   */
++    uint8_t  ym_timer_a_running;
++    uint64_t ym_timer_a_deadline;       /* absolute scheduler master cycles    */
++    uint64_t ym_timer_a_period;         /* cached period in master cycles      */
+ 
+     /* Controllers / I-O. */
+     uint16_t pad[2];                    /* live button state (GPAD_* bits, 12) */
 diff --git a/runner/video/genesis_machine.c b/runner/video/genesis_machine.c
-index bfbe22d..ba859aa 100644
+index bfbe22d..f20854e 100644
 --- a/runner/video/genesis_machine.c
 +++ b/runner/video/genesis_machine.c
 @@ -14,6 +14,7 @@
@@ -703,7 +933,26 @@ index bfbe22d..ba859aa 100644
  #ifdef GEN_DEV_TRACE
      /* [SND-TRACE] V-int acceptance: pending fell 1->0 during this slice. */
      if (g_snd_trace && pend_before &&
-@@ -540,7 +561,7 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+@@ -529,6 +550,18 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+     static uint32_t rowbuf[GVDP_MAX_WIDTH];
+     static GVDPRasterRow raster;
+ 
++    { static const char *zd = NULL; static int zi = 0;
++      if (!zi) { zi = 1; zd = getenv("GENESIS_Z80RAM_DIR"); }
++      if (zd && *zd) { char path[512];
++        snprintf(path, sizeof path, "%s/z%06lu.bin", zd, g_snd_frame);
++        FILE *zf = fopen(path, "wb");
++        if (zf) { fwrite(g_machine.bus.z80_ram, 1, 0x2000, zf); fclose(zf); } } }
++    { static int vl = -1; extern unsigned long g_vdp_data_writes;
++      if (vl < 0) { const char *e = getenv("GENESIS_VDPW_LOG"); vl = (e && *e && *e != '0'); }
++      if (vl) { extern unsigned long g_ym_reads, g_ym_tb_seen;
++                fprintf(stderr, "[VDPW] f=%lu writes=%lu ym_reads=%lu tb=%lu\n",
++                        g_snd_frame, g_vdp_data_writes, g_ym_reads, g_ym_tb_seen);
++                fflush(stderr); g_vdp_data_writes = 0; } }
+     for (int line = 0; line < LINES_TOTAL; line++) {
+         unsigned irq = gvdp_begin_scanline(&m->vdp, line);
+         g_snd_line = (unsigned)line;   /* [SND-TRACE] */
+@@ -540,7 +573,7 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
  
          /* If a prior V-int was latched while the 68K had IRQs masked (e.g. a
           * move #$2700,sr screen transition), deliver it now that the chunk above

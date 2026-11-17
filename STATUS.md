@@ -56,6 +56,20 @@ scenes drop from 139 to 35, and the boot hashes are unchanged.
 
 ---
 
+## Sound: YM2612 timer A implemented (2026-11-17)
+
+The missing music was a backend gap, not a game-logic or timing problem: the runner's
+YM2612 model implemented only timer B, while Shadowrun's sound driver runs its sequencer
+from timer A. The driver polled the status register millions of times waiting for a flag
+that could never be raised, and its music stopped once the initially queued track ran out.
+
+Timer A is now modelled (registers $24/$25, $27 bits 0/2/4, status bit 0, period
+(1024 - TA) * 1008 master cycles, following ymfm's formula). Reference replay FM thirds:
+6570/6570/383/383 -> 6570/6570/6353/4127. Boot hashes, the combat replay and determinism
+are unchanged.
+
+Awaiting player confirmation on a live session.
+
 ## Session summary (2026-11-16)
 
 ### Fixed and validated
