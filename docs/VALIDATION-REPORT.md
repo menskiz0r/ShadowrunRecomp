@@ -1572,3 +1572,29 @@ Measured after the change: 2059 timer events over the 39.6 s the timer is loaded
 **52.0/s**, exactly the chip rate (previously 8.1/s). Boot hashes unchanged
 (7258/EE92/64B0/D843/5F8D/11C1); FM thirds 5848/5021/3996 (continuous); no clipping,
 no sample discontinuities.
+
+### 2026-11-18: the timer interrupt doubles the sequencer rate
+
+Measured the driver's own register traffic: it loads timer A with `$27 = $05` (bit 0 load,
+bit 2 IRQ enable) and never writes `$24`/`$25`, so the chip's period is TA=0 -> 1024 * 1008
+master cycles = 52 Hz. That rate is correct for the hardware.
+
+What is not settled is the interrupt. With the Z80 IRQ raised once per timer period the
+driver's note rate increases by ~52%:
+
+```
+timer IRQ off: key-ons 18.66/s
+timer IRQ on : key-ons 28.36/s     (timer firing at 46.6/s either way)
+```
+
+Both backends agree with each other when the IRQ setting is the same (mean gap between
+notes 1.75 frames in each), so this is a model question, not a recompiler question.
+
+`GENESIS_YM_TIMER_IRQ` now gates that interrupt (default off, flag always set). Remaining
+question: whether the driver expects the 52 Hz interrupt (as its `$27` write suggests) or
+polls the flag, and whether our delivery acknowledges the chip's flag the way the handler
+does. That determines the correct tempo.
+
+Also relevant: the track itself is chosen by the game's RNG, whose seed is a checksum of
+work RAM at boot, so the port can legitimately play a different track than a given
+playthrough video. For A/B comparison both backends were run with `GENESIS_FORCE_SEED`.
