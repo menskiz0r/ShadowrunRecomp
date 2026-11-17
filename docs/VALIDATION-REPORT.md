@@ -1245,3 +1245,50 @@ So `$FF019F` is 00 in the recompiled build where the interpreter holds 05. It is
 addressed by any absolute-long reference in the ROM (accessed through a base register),
 so the next step is to find its writer with a RAM write watchpoint and see whether it
 is a music/track selection byte.
+
+### 2026-11-17: the track selection is RNG-driven, and the RNG seed differs
+
+Chased the persistent `$FF019F` difference to its writer and then to the state byte it
+copies:
+
+```
+0556B0  move.b $FFF0DD.l, (a4)     ; copy state byte into a table
+```
+
+`$FFF0DD` is produced by a 7-try weighted selector at `$0DBA`:
+
+```
+000DC6  clr.b  $FFF0DD.l
+000DD0  jsr    $0D3A               ; RNG
+000DEC  addq.b #1,$FFF0DD.l        ; count the hits
+000DF2  dbra   d6,$0DCE
+```
+
+and `$0D3A` calls `$0D44`, a linear congruential generator with state `$FFF9F8`:
+
+```
+000D46  move.w $FFF9F8.l,d0
+000D4C  mulu.w #$20E5,d0
+000D50  addq.w #1,d0
+000D52  move.w d0,$FFF9F8.l
+```
+
+The seed is produced at boot by `$0C2C` from a checksum of work RAM:
+
+```
+000C2C  cmpi.l #$12345678,$FFF9E8
+000C3C  move.w #$3FDF,d7
+000C46  add.l  (a0),d1             ; checksum every longword
+000C48  move.l d0,(a0)+            ; and clear it
+000C4E  move.w d1,$FFF9F8          ; seed
+```
+
+Measured: the two backends' seed values first differ at game frame 72 (`$FFFF`
+recompiled vs `$5300` interpreter), so their RNG streams diverge from the first draw
+and every downstream random choice (which track is requested, hence `$FFF0DD` /
+`$FF019F` and the earlier command-stream stop) follows from it.
+
+So the music difference is a downstream symptom of differing work RAM contents at the
+moment of the boot checksum. Next step: compare RAM in the first 72 game frames and
+identify the bytes that differ before the checksum runs (`$FFFFF3` at game frame 30 is
+the first known one).
