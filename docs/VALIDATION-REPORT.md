@@ -1217,3 +1217,31 @@ frame-indexed RAM diffs should be treated as suspect for this reason, including 
 This also means the remaining question ("why does the recompiled 68K stop sending sound
 commands after frame 3389") cannot be answered by frame-indexed comparison: it needs a
 common anchor (a specific sound command, a VBlank count, or the co-sim).
+
+### 2026-11-17: valid comparison method found; one persistent game-time difference
+
+Frame-indexed comparison is invalid (phase offset), so both replays were re-run with
+`--autodump-ram-every 1` and the snapshots were matched by the game's own VBlank
+counter (`$FFF9EC`) instead of wall frames: 4866 game frames align out of 4887.
+
+Results:
+- boot divergence is transient (167 bytes at game-frame 37, back to 5 by frame 53)
+- a large transient at game-frame 1806 (33769 bytes) is a scene load
+- during the "silence window" (game frames 3200-4900) states differ by only ~200-500
+  bytes, i.e. the runs track each other closely
+- the music difference is real in game time: the recompiled build's last driver command
+  is at game-frame **3235**, the interpreter's at **4867**, and the recompiled build
+  reaches game-frame 4867 at wall frame 5021 without sending anything
+
+One persistent, game-time-aligned difference stands out:
+
+```
+vblank   $FF019F rec/int
+  3200    03 / 02
+  3368+   00 / 05   (persists to the end)
+```
+
+So `$FF019F` is 00 in the recompiled build where the interpreter holds 05. It is not
+addressed by any absolute-long reference in the ROM (accessed through a base register),
+so the next step is to find its writer with a RAM write watchpoint and see whether it
+is a music/track selection byte.
