@@ -1410,3 +1410,27 @@ Supporting measurements:
 Next: identify what paces the cutscene (the counter it waits on) and why it advances
 sooner in the recompiled build; the park/fast-path and VBlank bookkeeping are the prime
 suspects.
+
+### 2026-11-17: port updated to SDK v0.1.3 (maintainer's sound-timer fix)
+
+SDK v0.1.3 (`ae3e1df`) contains `18921ed Preserve running FM timer phase when clearing
+its flag` - acknowledging a timer flag no longer restarts the timer's deadline. The port
+was moved from `48e0f90` to `v0.1.3` and our local changes re-applied (one conflict in
+`diagnostic_replay.c` resolved by taking the upstream file wholesale, since it rewrote
+the checkpoint hashing and already includes the ignore-checkpoint bypass).
+
+The same phase-preservation rule was applied to the timer A implementation added here
+(previously every load/acknowledge reset the deadline).
+
+Results on v0.1.3 + timer A:
+- boot hashes 1000-6000 unchanged (45E5/E29B/06B5/29F9/5F8D/11C1)
+- scripted session FM thirds [6570, 6570, 4822, 4566] - music plays throughout
+  (before the timer A implementation: [6570, 6570, 383, 383])
+- the intro scene-pacing difference is unchanged: at matched game clocks only 4 of the
+  45 sampled frames share a screen hash between the recompiled build and the interpreter
+  (10 screens appear only in the recompiled run, 8 only in the interpreter)
+
+Note: v0.1.3 also changed the replay container format, so replays recorded with the
+previous build (including the 20261115-204746 combat session) are rejected with
+"invalid startup SRAM attachment". A replay re-recorded with the current build is needed
+for replay-based validation; the deterministic input-script runs are unaffected.
