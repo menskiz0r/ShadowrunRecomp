@@ -1434,3 +1434,34 @@ Note: v0.1.3 also changed the replay container format, so replays recorded with 
 previous build (including the 20261115-204746 combat session) are rejected with
 "invalid startup SRAM attachment". A replay re-recorded with the current build is needed
 for replay-based validation; the deterministic input-script runs are unaffected.
+
+### 2026-11-17: the VBlank-yield shortcut drops the ROM routine's side effects
+
+The intro's scene driver (`$059F30` onwards) is a VBlank-paced loop that calls
+`$000BD2` and counts the calls. The ROM routine is not the Sonic-style
+`move #sr / tst.b flag / bne self / rts` idiom that the generator's yield shortcut
+assumes:
+
+```
+000BD2  addq.w #1,$FFDF88      ; per-wait counter used by the game
+000BD8  move.w $FFF9F6,d7
+000BDE  cmp.w  $FFF9EE,d7
+000BE4  beq.b  $000BDE         ; spin until the VBlank counter changes
+000BE6  move.w $FFF9EE,$FFF9F6
+000BF0  rts
+```
+
+`game.toml` listed `vblank_yield_addr = 0x000BD2`, so the generator replaced the whole
+function with `g_cpu.SR = 0x2300; glue_yield_for_vblank();` - dropping the `addq.w` on
+`$FFDF88` and the `$FFF9F6` bookkeeping entirely. Any game logic counting those waits
+therefore advanced faster than the ROM.
+
+Disabling the directive (so the real body runs):
+
+- the game's VBlank clock now tracks the interpreter within 1 frame instead of drifting
+  to 25 frames over the same window
+- boot hashes change (45E5/E29B/06B5 -> 7258/EE92/64B0) - expected, because the dropped
+  side effects now happen
+
+The intro text-card duration still differs from the interpreter at matched game clocks,
+so this is a real fidelity fix but not yet the whole scene-skip cause.
