@@ -1375,3 +1375,38 @@ after : FM thirds [6570, 6570, 6353, 4127]   (music continues through the sessio
 All six boot hashes unchanged (45E5/E29B/06B5/29F9/5F8D/11C1), the combat replay still
 matches all 5042 inputs with an empty interior-label miss list, and two paced replays
 produce bit-identical audio.
+
+### 2026-11-17: intro scene pacing differs (reproduced without player input)
+
+Built a deterministic reproducer for the reported "scene skips ahead" defect: an input
+script (`build/pair.input`) drives the title screen and menu by itself, then samples a
+screenshot plus a work-RAM dump every 20 frames. Running it on both backends and
+matching frames by the game's own VBlank counter (`$FFF9EC`) shows the intro sequences
+are NOT identical in game time:
+
+```
+game clock    recompiled        interpreter
+  2059        30CDF648 (text)    47B7F03C (text, held ~80 frames)
+  2193        3128F65B (ambush)  54847DB0 (text, held ~140 frames)
+  2358        ...               170D2006 (text, held ~180 frames)
+  2771        3087DFFF (frozen) 3128F65B (ambush)
+```
+
+So the recompiled build reaches the ambush text at game frame ~2190 while the
+interpreter reaches it at ~2770: the cutscene advances faster per game frame in the
+recompiled build. The content is not missing - the text cards pass much faster.
+
+Supporting measurements:
+- both backends consume the same nominal 68K budget (M68K_PER_LINE 488 x 262 =
+  127856 cycles/frame, matching 7.67 MHz at 60 Hz)
+- the generator charges `estimate_cycles_prm`, the same PRM model the shipping
+  interpreter charges, so the difference is not the cost model in principle
+- the game VBlank clock advances in bursts on both backends: over 200-frame windows the
+  recompiled build advances by 173/200/200/182 and the interpreter by 200/200/199/174,
+  so both drop VBlanks during scene transitions
+- instruction-per-frame counters are not comparable (the recompiled build parks on its
+  VBlank fast path instead of executing the wait loop)
+
+Next: identify what paces the cutscene (the counter it waits on) and why it advances
+sooner in the recompiled build; the park/fast-path and VBlank bookkeeping are the prime
+suspects.
