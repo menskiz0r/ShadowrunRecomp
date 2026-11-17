@@ -1504,3 +1504,35 @@ appeared to show the port skipping the text cards. Button presses advance the in
 by design, and the presses landed at different game times in the two backends; with
 START-only input the sequences are identical. Check the input script before concluding a
 scene is skipped.
+
+### 2026-11-18: intro text was dispatched through interior labels
+
+The intro text plots are entered through computed jumps to blocks that sit *after* a
+`jmp $c0da`, so the recompiler never made them function entries. The dispatch reported
+them at run time:
+
+```
+[dispatch] interior-label miss: $05AEC6 inside func $000000 at frame 1595
+[dispatch] interior-label miss: $05AEDA ... frame 1716
+[dispatch] interior-label miss: $05AEEE ... frame 1897
+[dispatch] interior-label miss: $05B378 ... frame 2138
+```
+
+`$05AEC6/$05AEDA/$05AEEE` load a string pointer and a VRAM destination and tail-call the
+text plotter at `$00C0DA`; `$05B378` is the CRAM/VRAM transfer setup. Reached only by
+call_by_address, they ran through the fallback, so the intro text never appeared.
+
+Added them to `[functions].late_extra`. Verification (input script: title -> menu ->
+archetype -> intro, screenshots plus RAM every 20 frames, matched by the game VBlank
+counter):
+
+- `interior_label_misses.toml`: empty
+- intro screens identical to the interpreter: 45/45 (previously 11/45)
+- the twilight card now renders ("The Time: January 31, 2058" over the skyline)
+
+Remaining report from play: sound becomes "a mess" at the ambush without vanishing.
+A pre-resample capture of that transition shows no clipping (0 samples at full scale) and
+no dropouts (per-second RMS 380-2058), so it is a timing/voicing problem rather than
+noise. The YM timer A only raises its status flag here; the Z80 IRQ line is still only
+wired for VBlank (`genesis_machine.c` asserts it at V-int), which is the next thing to
+check if the driver expects an interrupt rather than polling.
