@@ -1292,3 +1292,44 @@ So the music difference is a downstream symptom of differing work RAM contents a
 moment of the boot checksum. Next step: compare RAM in the first 72 game frames and
 identify the bytes that differ before the checksum runs (`$FFFFF3` at game frame 30 is
 the first known one).
+
+### 2026-11-17: RNG seed experiment isolates the remaining defect to the Z80 driver
+
+Added `GENESIS_FORCE_SEED`, which overrides the boot writes of the RNG seed
+(`$FFF9F8`) during the first 20 frames, so both backends can start from an identical
+random stream (verified applied in both: the frame-14 seed write reads `5300`).
+
+Results with the same seed (`5300`):
+
+```
+recompiled: commands=42248 last_command_frame=3389 fm thirds 6570/6570/383/383
+interpreter: commands=42200 last_command_frame=3389 fm thirds 7529/7529/4445/380
+```
+
+Two conclusions:
+
+1. The interpreter's own command stream changed when the seed was forced (its last
+   command moved from frame 4995 to 3389), so the music *events* are RNG-driven - the
+   seed really does control when tracks are requested.
+2. Even with identical seeds the recompiled build's FM output goes quiet (383) while
+   the interpreter keeps playing (4445). So the remaining defect is not in the 68K music
+   logic; it is in what the Z80 driver does with the same commands.
+
+Per-frame Z80 RAM dumps, aligned by the game VBlank counter, show where that starts:
+
+```
+game frame 0 : identical
+game frame 2 : 27 bytes differ, first at $0036 (ring index 0x10 vs 0x00)
+game frame 3 : 9 bytes differ ($003E, $0454, $1B1A-$1B1D, ...)
+game frame 4-6: 1 byte ($1B1E: 06 vs 29)
+game frame 3100+: a stable 849-byte difference
+```
+
+So the drivers diverge within the first three game frames (ring index and driver data),
+then settle into two different states. This matches the much earlier observation that
+the Z80 is released at frame 25 line 86 (recompiled) versus line 82 (interpreter): the
+driver starts at a different phase and stays offset.
+
+Next step: examine why the ring index is already 0x10 vs 0x00 at game frame 2 - i.e.
+which 68K writes reached the ring before that point, and whether the driver's first
+init pass ran at a different line within the frame.
