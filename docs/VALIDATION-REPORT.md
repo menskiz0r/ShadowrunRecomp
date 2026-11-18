@@ -1957,3 +1957,26 @@ Remaining question: whether the buffer genuinely contains a premature terminator
 truncation/corruption at boot, when ~26k bytes move 68K->Z80 through the 64-byte ring) or
 whether `BC` starts at the wrong place. Next: at the stop, read `BC` (or watch reads of the
 sample buffer) and compare the bytes around the terminator with the 68K-side source.
+
+### 2026-11-18: the drums end because the pattern table ends
+
+Added a probe on the streamer's terminator check (`$15D2`, `LD A,(BC); OR A; RET Z`) that
+logs BC and the byte it reads:
+
+```
+first: f=216   bc=161C byte=B0
+...
+last : f=3162  bc=1658 byte=00     <- terminator
+```
+
+BC walks the driver's own data area `$1618-$1658`, whose contents are pairs
+(`B0 02 B4 03 30 04 40 85 50 06 60 07 70 08 80 09 90 00 38 10 ...`), and stops at the
+`00` at `$1658`. So this is a **drum pattern list** consumed by `$15D0`, not PCM sample
+data, and it ends because the list ends.
+
+The reference keeps drumming past that point, so on hardware the pattern is either looped
+or re-armed. Our build returns to the idle path instead.
+
+Next: find what restarts the pattern - the caller of `$15D0`, or a loop flag/count that the
+68K sets through the ring. If the 68K never re-arms it in our run, the difference is on the
+68K side; if it does and we ignore it, the difference is in the driver.
