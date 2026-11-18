@@ -1711,3 +1711,23 @@ timer period          1032192 (52 Hz)   -> 7056 (7609 Hz)
 The intro music rate is identical either way (28.71 key-ons/s), so the earlier "tempo
 too fast with the interrupt" symptom was the broken reload, not the interrupt. The timer
 interrupt is now on by default; boot hashes are unchanged (7258/EE92/64B0).
+
+### 2026-11-18: PCM works without inflating the music tempo
+
+The driver's IRQ handler is six bytes long: it stores SP into `$003E` and returns, so the
+main loop treats **every interrupt as one tick**. Delivering a timer interrupt per PCM
+sample therefore also drove the music clock: the in-game note rate rose from 6.5/s to
+17.5/s and stayed fast because the driver leaves timer A at a PCM rate (7056/10080/6048
+cycles) after the ambush.
+
+Measured split with the interrupt gated to actual PCM activity:
+
+```
+                    key-ons      DAC bytes     timer IRQ
+intro (music)       9.65/s          0/s            0/s
+ambush (PCM)       46.97/s       5196/s         5537/s
+after              9.83/s       1474/s         1587/s
+```
+
+So the music clock is back to its polling rate while the DAC stream runs at ~5 kHz.
+Boot hashes unchanged (7258/EE92/64B0).
