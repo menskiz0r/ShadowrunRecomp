@@ -2007,3 +2007,21 @@ back, and the drums stop while the reference keeps playing.
 The remaining question is therefore in the sequencer: which command or counter clears
 `(IX+$01)`'s bit 6 for that voice at that point, and whether the 68K is supposed to re-send
 it.
+
+### 2026-11-18: the music engine goes idle - but scripted input may be the cause
+
+Extended the probe with IX and the voice state byte. The drum voice is `$18D5` (4929 of
+11904 checks), and its struct at `$18D5-$18E4` is **byte-identical** at frames 3100, 3150,
+3200 and 3280. Same for `$18AE` and `$1923`.
+
+What actually stops is the call itself: `$14EC CALL $15D0` is no longer reached after
+frame 3162, i.e. the music engine stops ticking `$14E0` altogether.
+
+Important caveat: `build/battle.input` presses A every 60 frames from the card onwards, and
+those presses can legitimately advance the game past the battle scene, which would stop the
+music. So the "drum track ends early" seen in that capture may be partly script-induced
+rather than a defect.
+
+The player's live session remains the authoritative source. Comparing its drum section with
+the reference (452 ms vs 318 ms earlier, before the PCM fixes) should be re-run now that
+PCM streams correctly, using the same onset analysis on `sessions/20261118-071737` audio.
