@@ -2363,3 +2363,35 @@ timeline rather than the port's game clock.
 
 (Recorded without the earlier over-claim: the transient-smearing numbers are confounded by
 the longplay's clipping and are not evidence of time-stretching on their own.)
+
+### 2026-11-18: visual anchor proves the ambush music differs from the reference
+
+Built a video decoder (`build/mfvid.c`, Media Foundation, RGB32 frames to PPM) and matched
+the port's screenshots against decoded longplay frames by normalised cross-correlation.
+
+The ambush card is identical in both and gives a hard anchor:
+
+```
+port screenshot c060 (frame 3016, 50.3 s) == longplay frame at 74-75 s
+longplay card on screen: 73.5-79.5 s
+port card on screen:     48.5-53.6 s (capture window ends)
+```
+
+So the scene lag is ~25 s, and the card duration matches (about 5-6 s in both). But during
+that same card:
+
+```
+longplay music: 452 ms cue
+port music:     244 ms (the battle figure)
+```
+
+The transient trains of the two do not align at time scale 1.0, 1.85 or 2.0, so this is a
+different cue, not the same cue faster.
+
+The 68K command stream during the ambush shows the game issuing music commands at the same
+script points (FF 10 2F at f=2544, FF 10 2E at f=2724, then FF 20 14/28/3C at f=2861-2870),
+so the game asks for a cue and the driver starts a different one than the longplay.
+
+Next: trace how the driver handles the FF 20 xx command at f=2861 (track select / start) and
+compare the track data it loads with the cue the longplay plays. This is the first concrete,
+scene-anchored defect found in the music path.
