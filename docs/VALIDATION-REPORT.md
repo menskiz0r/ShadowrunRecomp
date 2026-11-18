@@ -2052,3 +2052,27 @@ A factor of two also maps onto a common PCM rate: 7610 / 2 = 3805 Hz.
 Next: test halving the drum stream rate specifically (the continuous high-rate PCM stream)
 and compare with `ref_0_130.pcm`; if 3805 Hz is right, the drum sample plays at its authored
 rate and the voices (7610 Hz) stay untouched.
+
+### 2026-11-18: the drum pattern clock runs at exactly 2x - it is not the DAC rate
+
+Added `GENESIS_YM_DRUM_HALF` (doubles the timer period only while the long continuous PCM
+burst is active, ~110 DAC bytes/frame vs ~50 for voices) and measured the system output
+with WASAPI loopback again. The drum periods were unchanged: 182/244 ms before and after.
+
+That rules out the sample rate for the drum rhythm. The measured periods line up exactly
+with the reference at a factor of two:
+
+```
+ours 182 ms  ->  reference 368 ms (x2 = 364)
+ours 244 ms  ->  reference 488 ms (x2 = 488)
+```
+
+So the drum *sequencer* advances at twice the correct rate, while:
+- `GENESIS_YM_TA_SCALE=143` changed the music tempo but not the drums
+- `GENESIS_YM_DRUM_FIX` (7056->10080) changed the voices but not the drums
+- `GENESIS_YM_DRUM_HALF` (PCM period x2) changed nothing for the drums
+
+The drum pattern is therefore clocked by a divisor/counter upstream of the DAC (the music
+tick that walks `$1618-$1658`), not by the PCM timer. Next: measure that tick - the same
+main-loop tick drives the FM music, which sounds correct, so the drum voice must use a
+different divisor (likely a tempo table entry) that we are running at half length.
