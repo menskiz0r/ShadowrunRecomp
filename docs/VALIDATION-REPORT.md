@@ -1831,3 +1831,30 @@ established:
 Next: capture our own fight audio (scripted input that actually enters the fight, or a
 recorded session that plays through it) and compare against
 `ref_0_130.pcm` at the 24.5 s offset.
+
+### 2026-11-18: drums are the right tempo but the track stops early
+
+Built an input script (`build/battle.input`) that presses A past the ambush card, so the
+headless run now reaches the battle, and captured its host-rate audio
+(`build/battlerun/host.s16`, 76.7 s).
+
+Onset analysis against the reference (level-independent):
+
+```
+our battle 46-53 s : 10.29 onsets/s, median gap 80 ms
+reference  69-76 s : 10.00 onsets/s, median gap 80 ms
+reference  86-93 s : 23.00 onsets/s, median gap 40 ms
+```
+
+So the drum rhythm matches the reference at the start of the battle - a 1.42x rate error
+would have produced 56 ms gaps, not 80. What differs is duration: our DAC stream stops at
+~frame 3240 (~54 s) and never resumes (the timer then sits at 6048 with 0 DAC bytes/s),
+while the reference keeps the track running.
+
+The 68K->Z80 traffic during the battle is tiny (5-48 bytes/s); all large transfers happen
+at boot (frames 24-30, ~26k bytes). So the drum data is not re-uploaded during the scene -
+the driver decides internally when to stop or loop it, which is where the remaining defect
+must be.
+
+Player-confirmed state at this commit: voices correct in pitch and tempo, music tempo
+correct, drum rhythm correct at the start of the battle but the track stops early.
