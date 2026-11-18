@@ -1980,3 +1980,30 @@ or re-armed. Our build returns to the idle path instead.
 Next: find what restarts the pattern - the caller of `$15D0`, or a loop flag/count that the
 68K sets through the ring. If the 68K never re-arms it in our run, the difference is on the
 68K side; if it does and we ignore it, the difference is in the driver.
+
+### 2026-11-18: the pattern is re-armed by the sequencer, not the streamer
+
+Added the return address to the terminator probe: every `$15D0` terminator returns to
+`$14EF` (384 times across the scene). The call site decodes as:
+
+```
+14E0: 07 4F        RLCA / LD C,A
+14E2: 09           ADD HL,BC
+14E3: 7E           LD A,(HL)
+14E4: 32 CE 15     LD ($15CE),A
+14E7: 26 40        LD H,$40
+14E9: 01 1C 16     LD BC,$161C        ; pattern table
+14EC: CD D0 15     CALL $15D0         ; consume the pattern (RET Z on 00)
+14EF: DD CB 01 76  BIT 6,(IX+$01)     ; per-voice state byte decides the next step
+14F3: 20 2D        JR NZ,$1522
+14F5: FD 21 2D 14  LD IY,$142D
+...
+```
+
+So the drum pattern ending is normal; the sequencer re-enters `$14E0` whenever the voice
+state at `(IX+$01)` calls for it. After frame 3162 that state no longer routes the voice
+back, and the drums stop while the reference keeps playing.
+
+The remaining question is therefore in the sequencer: which command or counter clears
+`(IX+$01)`'s bit 6 for that voice at that point, and whether the 68K is supposed to re-send
+it.
