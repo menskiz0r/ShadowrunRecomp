@@ -1922,3 +1922,38 @@ refilling anything continuously.
 
 Next: identify who reloads `$0040` and which side sets the `$16xx` flag - the remaining
 two candidates for why the drum stream finishes early.
+
+### 2026-11-18: drum stream ends on a zero byte in the sample buffer
+
+The Z80 write watch on the `$16xx` mirror showed a routine at `$1611` publishing a pointer
+into `$1616` 9408 times, stopping at frame 3162. Dumping that code from the RAM snapshot
+gives the streamer:
+
+```
+15D0: 0A        LD A,(BC)        ; next sample byte from the buffer
+15D1: B7        OR A
+15D2: C8        RET Z            ; ZERO terminates the stream
+15D3: 03        INC BC
+15D4: 2E 00     LD L,$00
+15D6: CB 7E     BIT 7,(HL)       ; wait for the DAC channel ready
+15D8: 20 FC     JR NZ,$15D6
+15DA: 6A        LD L,D
+15DB: 83        ADD A,E
+15DC: 77        LD (HL),A
+15DD: 2C        INC L
+15DE: 0A        LD A,(BC)
+15DF: B7        OR A
+15E0: CA 17 16  JR Z,$1617
+15E3: F2 11 16  JP P,$1611
+...
+1611: 32 16 16  LD ($1616),A     ; publish the current pointer
+```
+
+So the drum track ends because the driver meets a zero byte in the PCM buffer at `BC` -
+the data terminator. Up to that point it streams the real samples at the correct rate
+(the measured 80 ms onsets match the reference), which is why only the duration is short.
+
+Remaining question: whether the buffer genuinely contains a premature terminator (upload
+truncation/corruption at boot, when ~26k bytes move 68K->Z80 through the 64-byte ring) or
+whether `BC` starts at the wrong place. Next: at the stop, read `BC` (or watch reads of the
+sample buffer) and compare the bytes around the terminator with the 68K-side source.
