@@ -1659,3 +1659,26 @@ it needs a recorded session that carries the player's inputs through the battle.
 
 Session recording: `scripts/record-session.ps1` (writes replay, audio and RAM; the same
 mechanism produced the 20261115-204746 combat session used earlier).
+
+### 2026-11-18: session recorded; the failing sounds are the DAC/PCM path
+
+The player recorded the failing run (`sessions/20261118-071737`, 2897 frames, 21 scenes;
+the ambush is the tail). Their description identifies the missing sounds precisely:
+drums and character death voices - i.e. the YM2612 channel-6 **DAC/PCM**, not FM music.
+
+Measured on that session and on scripted runs:
+
+- FM music path is clean (no clipping, no discontinuities, healthy levels through the
+  ambush window)
+- DAC register ($2A) traffic reaching the synth is **1 write per frame** (685-1837
+  writes per run), not the thousands-per-second a PCM stream needs - the drums/voices are
+  effectively never streamed
+- the same low DAC rate appears in every scenario that reaches the ambush text; the
+  fight itself (where the voices play) has not been reached headlessly because scripted
+  input only navigates the character-creation menus
+
+Replay of the recorded session worked immediately after recording ("all 2897 recorded
+executions matched") but is rejected after the next rebuild with `invalid startup SRAM
+attachment`: the recorder stores the post-play SRAM as the `.sav` sidecar, while the
+replay's boot snapshot expects the startup SRAM. Next step is to fix that recorder/loader
+mismatch (or archive the startup SRAM), then instrument the DAC path against the fight.

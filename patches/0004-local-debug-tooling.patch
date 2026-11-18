@@ -52,6 +52,38 @@ index 9dab768..7e5353f 100644
      cfg.stretch_enable = 1;     /* conceal on (defaults to 1; pinned explicit) */
      if (rab_init(&s_bridge, &cfg) != 0) {
          fprintf(stderr, "audio: rab_init (DRC bridge) failed\n");
+diff --git a/runner/audio/event_queue.c b/runner/audio/event_queue.c
+index f22e787..3ec1267 100644
+--- a/runner/audio/event_queue.c
++++ b/runner/audio/event_queue.c
+@@ -121,6 +121,8 @@ int audio_event_cosim_hist(uint64_t *out_idx, uint32_t *out_stamp, uint32_t *out
+ }
+ #endif /* GENESIS_COSIM */
+ 
++unsigned long g_audio_dac_events = 0;   /* DAC (reg $2A) writes reaching the synth */
++
+ void audio_event_push(uint32_t cycle_stamp, uint8_t port, uint8_t value)
+ {
+ #ifdef GENESIS_COSIM
+diff --git a/runner/audio/event_queue.h b/runner/audio/event_queue.h
+index e965071..499dd54 100644
+--- a/runner/audio/event_queue.h
++++ b/runner/audio/event_queue.h
+@@ -39,10 +39,14 @@ void audio_event_push(uint32_t cycle_stamp, uint8_t port, uint8_t value);
+  * Both events have the data write's stamp, so the existing stable pair guard
+  * keeps the address and data together. This adds no guest bus access/cycles.
+  * data_port must be AUDIO_PORT_FM1_DATA or AUDIO_PORT_FM2_DATA. */
++extern unsigned long g_audio_dac_events;
++
+ static inline void audio_event_push_latched(uint32_t cycle_stamp,
+                                            uint8_t data_port, uint8_t reg,
+                                            uint8_t value)
+ {
++    /* Count every DAC byte the synth is asked to play (reg $2A on either part). */
++    if (reg == 0x2Au) ++g_audio_dac_events;
+     audio_event_push(cycle_stamp, (uint8_t)(data_port - 1u), reg);
+     audio_event_push(cycle_stamp, data_port, value);
+ }
 diff --git a/runner/m68k_interp.c b/runner/m68k_interp.c
 index c7adb60..1c0d9ee 100644
 --- a/runner/m68k_interp.c
@@ -171,7 +203,7 @@ index 5b530a1..33a15ed 100644
      return 1;
  }
 diff --git a/runner/video/genesis_bus.c b/runner/video/genesis_bus.c
-index 2358402..af46f8e 100644
+index 2358402..11d115c 100644
 --- a/runner/video/genesis_bus.c
 +++ b/runner/video/genesis_bus.c
 @@ -12,7 +12,8 @@ void gbus_68k_z80ram(unsigned off, uint8_t val);
@@ -180,7 +212,7 @@ index 2358402..af46f8e 100644
  unsigned long g_vdp_data_writes = 0;
 -unsigned long g_ym_reads = 0, g_ym_tb_seen = 0;   /* 68K writes to the VDP data port */
 +unsigned long g_ym_reads = 0, g_ym_tb_seen = 0;
-+unsigned long g_ym_irq_count = 0, g_ym_ta_period = 0, g_ym_ta_fires = 0, g_ym_keyons = 0, g_ym_writes = 0;   /* 68K writes to the VDP data port */
++unsigned long g_ym_irq_count = 0, g_ym_ta_period = 0, g_ym_ta_fires = 0, g_ym_keyons = 0, g_ym_writes = 0, g_ym_dac_writes = 0;   /* 68K writes to the VDP data port */
  static void z80cmd_log(uint16_t off, uint8_t val);
  static void z80rd_log(uint32_t a, uint8_t val);
  /* Log 68K READS of Z80 space (the driver handshake polls) for the sound hunt. */
@@ -265,10 +297,12 @@ index 2358402..af46f8e 100644
  }
  
  static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
-@@ -171,6 +201,10 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
+@@ -171,6 +201,12 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
      uint8_t reg = b->ym_addr[0];
      { static int yl = -1;
        if (yl < 0) { const char *e = getenv("GENESIS_YMREG_LOG"); yl = (e && *e && *e != '0'); }
++      if (reg == 0x2Au) g_ym_dac_writes++;
++      if (reg == 0x2Bu && (val & 0x80u)) g_ym_dac_writes |= 0x80000000ul; /* DAC enable seen (high bit set) */
 +      if (reg == 0x28u) { extern unsigned long g_snd_frame;
 +        g_ym_writes++;
 +        if ((val & 0xF0u) == 0x00u || (val & 0x30u) == 0x30u) { g_ym_keyons++;
@@ -276,7 +310,7 @@ index 2358402..af46f8e 100644
        if (yl && (reg == 0x26u || reg == 0x27u || reg == 0x24u || reg == 0x25u))
            fprintf(stderr, "[YMREG] f=%lu reg=%02X val=%02X\n", g_snd_frame, reg, val); }
      if (reg == 0x24u) {
-@@ -189,9 +223,14 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
+@@ -189,9 +225,14 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
          if (val & 0x20u) b->ym_status &= 0xfdu;
          b->ym_mode = val;
          if (val & 0x01u) {                  /* bit 0: load/run timer A */
@@ -304,7 +338,7 @@ index 3f9dcb7..bb12a64 100644
 +void gbus_ym_timer_service(GenesisBus *b, uint64_t now);
  #endif /* GENESIS_BUS_H */
 diff --git a/runner/video/genesis_machine.c b/runner/video/genesis_machine.c
-index dd356e9..3cdb1ae 100644
+index dd356e9..4d1e495 100644
 --- a/runner/video/genesis_machine.c
 +++ b/runner/video/genesis_machine.c
 @@ -15,7 +15,8 @@
@@ -358,7 +392,7 @@ index dd356e9..3cdb1ae 100644
      GenesisIndexedSink *pixels=sink==genesis_indexed_sink_adapter?(GenesisIndexedSink *)user:NULL;
      void *producer_user=pixels?pixels->user:user;
      int active_h = gvdp_screen_height(&m->vdp);
-@@ -550,6 +581,27 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+@@ -550,6 +581,31 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
      static uint32_t rowbuf[GVDP_MAX_WIDTH];
      static GVDPRasterRow raster;
  
@@ -371,11 +405,15 @@ index dd356e9..3cdb1ae 100644
 +                prev_ns = (uint64_t)now_c; } }
 +    { static int cl = -1;
 +      if (cl < 0) { const char *e = getenv("GENESIS_COUNTER_LOG"); cl = (e && *e && *e != '0'); }
-+      if (cl) { extern unsigned long g_ym_irq_count, g_ym_ta_period, g_ym_ta_fires, g_ym_keyons, g_ym_writes;
-+                fprintf(stderr, "[YMT] f=%lu irq=%lu fires=%lu period=%lu keyons=%lu writes=%lu\n",
++      if (cl) { extern unsigned long g_ym_irq_count, g_ym_ta_period, g_ym_ta_fires, g_ym_keyons, g_ym_writes, g_ym_dac_writes;
++                fprintf(stderr, "[YMT] f=%lu irq=%lu fires=%lu period=%lu keyons=%lu writes=%lu dac=%lu\n",
 +                        g_snd_frame, g_ym_irq_count, g_ym_ta_fires, g_ym_ta_period,
-+                        g_ym_keyons, g_ym_writes);
-+                g_ym_irq_count = 0; g_ym_ta_fires = 0; g_ym_keyons = 0; g_ym_writes = 0; }
++                        g_ym_keyons, g_ym_writes, g_ym_dac_writes & 0x7FFFFFFFul);
++                { extern unsigned long g_audio_dac_events;
++                  fprintf(stderr, "[DACEV] f=%lu n=%lu\n", g_snd_frame, g_audio_dac_events);
++                  g_audio_dac_events = 0; }
++                g_ym_irq_count = 0; g_ym_ta_fires = 0; g_ym_keyons = 0; g_ym_writes = 0;
++                g_ym_dac_writes &= 0x80000000ul; }
 +      if (cl) { extern unsigned char g_ram[];
 +                unsigned vb = ((unsigned)g_ram[0xF9EC]<<24)|((unsigned)g_ram[0xF9ED]<<16)|
 +                              ((unsigned)g_ram[0xF9EE]<<8)|(unsigned)g_ram[0xF9EF];
@@ -386,7 +424,7 @@ index dd356e9..3cdb1ae 100644
      { static int il = -1; static uint64_t prev = 0;
        extern uint64_t g_native_insn_count;
        if (il < 0) { const char *e = getenv("GENESIS_INSN_FRAME_LOG"); il = (e && *e && *e != '0'); }
-@@ -575,7 +627,10 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+@@ -575,7 +631,10 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
          s_z80_off   = 0;   /* 68K writes during the chunk below land at the line start */
  
          /* Advance the recompiled 68K ~one scanline (it parks at WaitForVBlank). */
@@ -397,7 +435,7 @@ index dd356e9..3cdb1ae 100644
  
          /* If a prior V-int was latched while the 68K had IRQs masked (e.g. a
           * move #$2700,sr screen transition), deliver it now that the chunk above
-@@ -584,8 +639,17 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+@@ -584,8 +643,17 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
          glue_own_vint_service_latched(&m->vdp);
          glue_own_hint_service_latched(&m->vdp);
  
@@ -415,7 +453,7 @@ index dd356e9..3cdb1ae 100644
  
          /* Deliver interrupts to the 68K (and the Z80 at vblank). */
          if (irq & GVDP_IRQ_VBLANK) {
-@@ -629,6 +693,7 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+@@ -629,6 +697,7 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
           * when no output is requested (found by the determinism probe,
           * 2026-09-25: replays without rendering forked in the vdp partition
           * in 1-2 of 691 dense probe passes per game). */
@@ -423,7 +461,7 @@ index dd356e9..3cdb1ae 100644
          if (line < active_h) {
              int dbl = gvdp_interlace_double(&m->vdp);
              for (int sub = 0; sub <= dbl; sub++) {
-@@ -674,11 +739,30 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+@@ -674,11 +743,30 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
          if (irq & GVDP_IRQ_HBLANK) glue_own_interrupt(4, &m->vdp);
  
          m->master_cycle += MASTER_PER_LINE;
