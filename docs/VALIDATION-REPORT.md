@@ -1892,3 +1892,33 @@ execution-speed effect.
 Next: watch the driver's state variables (sample pointer/length, the words at `$02B3`/
 `$02B4` and the counters around `$02C0`) across frames 3100-3300 to see which value
 changes when streaming stops.
+
+### 2026-11-18: the stop is gated by $0040 and the $02B7 trampoline
+
+Full Z80 RAM diff between a streaming frame (3150) and a stopped one (3280):
+
+```
+$0040  streaming=A6 (166)  stopped=00     <- the main loop's countdown
+$02FF  streaming=A6         stopped=7E
+$02FC  streaming=$0176      stopped=$131C
+$02B7  streaming=18 26 (JR $02DF)  stopped=C9 (RET)
+$02B8  streaming=26         stopped=08
+$00xx  ring index $0036: 0 -> 3
+```
+
+The main loop is `LD A,($0040); SUB 1; JR C,skip; LD ($0040),A; CALL $0066; CALL $0041`.
+So `$0066` (the streaming work) runs only while `$0040` is non-zero. It is written only
+at the decrement site, so it must be reloaded by the work path itself; it is 0 in the
+stopped frame.
+
+`$02B7` is the trampoline: while streaming it holds `JR $02DF`, so each `CALL $02B7`
+enters the patcher, which rewrites the pair to `D9 08` (`EXX; EX AF,AF'`) and falls
+through to `$02B9: LD H,$36; BIT 0,(HL); JP Z,$02BB` - a spin on a flag in the Z80 RAM
+`$16xx` mirror. Stopped, `$02B7` is left as `RET` and that whole path is skipped.
+
+The 68K writes Z80 `$0040` only at boot (frames 23-30, value 0) and sends 5-48 bytes/s
+during the battle (ring index at `$0036`, ring payload at `$1B40-$1B4F`), so it is not
+refilling anything continuously.
+
+Next: identify who reloads `$0040` and which side sets the `$16xx` flag - the remaining
+two candidates for why the drum stream finishes early.
