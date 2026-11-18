@@ -2348,3 +2348,18 @@ ROM's authored tempo, which is what the port plays.
 
 Conclusion: there is no port-side tempo defect to fix. The 1.85x difference belongs to the
 reference encode.
+
+### 2026-11-18: cutscene timing is input-independent
+
+Ran the ambush both with repeated A presses from frame 2700 and with no input at all. The
+channel-1 key-on stream after frame 2000 is byte-identical in both runs
+(2001, 2002, 2016, 2017, 2031, 2032, ...), so scene/text pacing never consults the pad in
+this game - it is a fixed game-clock timeline.
+
+Consequently the port's cutscene duration is deterministic, and the longplay's longer
+passage at the same scene is not explained by player input either. Combined with the exact
+pitch match and the 1.85x rhythm difference, every observation now points at the reference
+timeline rather than the port's game clock.
+
+(Recorded without the earlier over-claim: the transient-smearing numbers are confounded by
+the longplay's clipping and are not evidence of time-stretching on their own.)
