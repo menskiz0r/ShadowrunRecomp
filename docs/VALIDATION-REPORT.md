@@ -1858,3 +1858,37 @@ must be.
 
 Player-confirmed state at this commit: voices correct in pitch and tempo, music tempo
 correct, drum rhythm correct at the start of the battle but the track stops early.
+
+### 2026-11-18: how the drum stream stops (Z80 trace)
+
+Compared the Z80 PC distribution one second before and one second after the DAC stream
+ends (~frame 3240):
+
+```
+frame 3150 (streaming): 02BB/02BD spin 560, 02B7 169, 0271 126, 02DF/02E0/02E2/02E5 85
+frame 3280 (stopped)  : 02B7 349, 0041/0042/0043/0044/0047/0048/0049 209
+```
+
+The streaming state calls `$02DF` 85 times per frame. That routine is a code patcher:
+
+```
+02DF: 08          EX AF,AF'
+02E0: 3E D9       LD A,$D9
+02E2: 32 B7 02    LD ($02B7),A     ; rewrite the trampoline byte
+02E5: 3E 08       LD A,$08
+02E7: 32 B8 02    LD ($02B8),A
+02EA: 08          EX AF,AF'
+02EB: C9          RET
+```
+
+with a sibling at `$02D0` restoring the saved bytes from `$02B3`/`$02B4`. So `$02B7` is a
+self-modifying trampoline that the driver rewrites to change how its main loop dispatches
+(each main-loop call goes through `CALL $02B7`, which the patcher re-points).
+
+When the drum data is exhausted the patching stops and the main loop returns to the idle
+path through `$0041`. The truncation is therefore a driver-level decision, not a timer or
+execution-speed effect.
+
+Next: watch the driver's state variables (sample pointer/length, the words at `$02B3`/
+`$02B4` and the counters around `$02C0`) across frames 3100-3300 to see which value
+changes when streaming stops.
