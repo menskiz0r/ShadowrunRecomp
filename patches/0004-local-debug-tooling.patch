@@ -719,7 +719,7 @@ index 5b530a1..33a15ed 100644
      return 1;
  }
 diff --git a/runner/video/genesis_bus.c b/runner/video/genesis_bus.c
-index d0e1647..e10b007 100644
+index d0e1647..70bb759 100644
 --- a/runner/video/genesis_bus.c
 +++ b/runner/video/genesis_bus.c
 @@ -7,6 +7,34 @@
@@ -770,14 +770,22 @@ index d0e1647..e10b007 100644
  
  static uint64_t ym_abs_z80_stamp(void)
  {
-@@ -106,20 +140,68 @@ static uint64_t ym_abs_68k_stamp(void)
+@@ -106,20 +140,76 @@ static uint64_t ym_abs_68k_stamp(void)
             (uint64_t)STAMP_68K();
  }
  
 +static uint64_t ym_timer_a_period(const GenesisBus *b)
 +{
 +    unsigned ta = ((unsigned)b->ym_timer_a_hi << 2) | ((unsigned)b->ym_timer_a_lo & 3u);
-+    return (uint64_t)(1024u - ta) * YM_TIMER_A_MASTER_TICK;
++    uint64_t p = (uint64_t)(1024u - ta) * YM_TIMER_A_MASTER_TICK;
++    /* Diagnostic scale for the PCM tick rate (percent). The reference capture
++     * implies the drums should run at 10080 cycles where we use 7056. */
++    static int scale = -1;
++    if (scale < 0) { const char *e = getenv("GENESIS_YM_TA_SCALE");
++                     scale = (e && *e) ? atoi(e) : 100;
++                     if (scale < 50 || scale > 400) scale = 100; }
++    if (scale != 100 && p < 20000u) p = p * (uint64_t)scale / 100u;
++    return p;
 +}
 +
 +
@@ -846,7 +854,7 @@ index d0e1647..e10b007 100644
  }
  
  static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
-@@ -131,10 +213,29 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
+@@ -131,10 +221,29 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
          b->ym_addr[bank] = val;
          return;
      }
@@ -880,7 +888,7 @@ index d0e1647..e10b007 100644
          b->ym_timer_b = val;
          b->ym_timer_b_period =
              (uint64_t)(256u - (unsigned)val) * YM_TIMER_B_MASTER_TICK;
-@@ -145,6 +246,22 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
+@@ -145,6 +254,22 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
          if (val & 0x10u) b->ym_status &= 0xfeu;
          if (val & 0x20u) b->ym_status &= 0xfdu;
          b->ym_mode = val;
@@ -903,7 +911,7 @@ index d0e1647..e10b007 100644
          if (val & 0x02u) {
              /* Loading starts a stopped timer. A flag acknowledgement that
               * leaves it loaded must preserve the running timer's phase. */
-@@ -358,6 +475,7 @@ uint16_t gbus_read16(GenesisBus *b, uint32_t a)
+@@ -358,6 +483,7 @@ uint16_t gbus_read16(GenesisBus *b, uint32_t a)
               * driver decompression's back-reference copy (MOVE.B (A4,D4.W),
               * (A5)+) — the S2 silent-audio bug. */
              unsigned off = a & 0x1FFFu;
@@ -911,7 +919,7 @@ index d0e1647..e10b007 100644
              return (uint16_t)(((uint16_t)b->z80_ram[off] << 8)
                                | b->z80_ram[(off + 1u) & 0x1FFFu]);
          }
-@@ -419,15 +537,50 @@ uint8_t gbus_peek8(const GenesisBus *b, uint32_t a)
+@@ -419,15 +545,50 @@ uint8_t gbus_peek8(const GenesisBus *b, uint32_t a)
  {
      a &= 0xFFFFFFu;
      if (a >= 0xA00000u && a < 0xA10000u && (a & 0xFFFFu) < 0x2000u)
@@ -963,7 +971,7 @@ index d0e1647..e10b007 100644
      a &= 0xFFFFFFu;
      if (a >= 0xFF0000u) {                                            /* RAM     */
          uint16_t o = (uint16_t)(a & 0xFFFFu);
-@@ -460,7 +613,7 @@ void gbus_write16(GenesisBus *b, uint32_t a, uint16_t v)
+@@ -460,7 +621,7 @@ void gbus_write16(GenesisBus *b, uint32_t a, uint16_t v)
          if ((a & 0xFFFFu) < 0x2000u) { unsigned off = a & 0x1FFFu;
              snd_trace_68k_write((uint16_t)off, b->z80_ram[off], (uint8_t)(v >> 8),
                                  b->z80_busreq, b->z80_reset_off);  /* [SND-TRACE] */
@@ -972,7 +980,7 @@ index d0e1647..e10b007 100644
          if (a >= 0xA04000u && a <= 0xA04003u) {
              uint8_t port = (uint8_t)(a & 3);
              ym_write_side_effect(b, port, (uint8_t)v, ym_abs_68k_stamp());
-@@ -503,6 +656,8 @@ uint8_t gbus_read8(GenesisBus *b, uint32_t a)
+@@ -503,6 +664,8 @@ uint8_t gbus_read8(GenesisBus *b, uint32_t a)
  
  void gbus_write8(GenesisBus *b, uint32_t a, uint8_t v)
  {
@@ -981,7 +989,7 @@ index d0e1647..e10b007 100644
      a &= 0xFFFFFFu;
      uint8_t *extra_ram = expansion_ram_at(a, 1);
      if (extra_ram) { *extra_ram = v; return; }
-@@ -512,7 +667,7 @@ void gbus_write8(GenesisBus *b, uint32_t a, uint8_t v)
+@@ -512,7 +675,7 @@ void gbus_write8(GenesisBus *b, uint32_t a, uint8_t v)
          if ((a & 0xFFFFu) < 0x2000u) { unsigned off = a & 0x1FFFu;
              snd_trace_68k_write((uint16_t)off, b->z80_ram[off], v,
                                  b->z80_busreq, b->z80_reset_off);  /* [SND-TRACE] */
@@ -990,7 +998,7 @@ index d0e1647..e10b007 100644
          if (a >= 0xA04000u && a <= 0xA04003u) {
              uint8_t port = (uint8_t)(a & 3);
              ym_write_side_effect(b, port, v, ym_abs_68k_stamp());
-@@ -534,6 +689,8 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
+@@ -534,6 +697,8 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
      /* YM2612 status: BUSY is clear; timer flags advance on scheduler time. */
      if (addr < 0x6000u) {
          ym_timer_update(b, ym_abs_z80_stamp());
@@ -999,7 +1007,7 @@ index d0e1647..e10b007 100644
          return b->ym_status;
      }
      if (addr < 0x8000u) return 0xFFu;                               /* bank/PSG   */
-@@ -542,10 +699,51 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
+@@ -542,10 +707,51 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
      return gbus_read8(b, a68);
  }
  
@@ -1074,7 +1082,7 @@ index 242774c..bb12a64 100644
 +void gbus_ym_timer_service(GenesisBus *b, uint64_t now);
  #endif /* GENESIS_BUS_H */
 diff --git a/runner/video/genesis_machine.c b/runner/video/genesis_machine.c
-index bfbe22d..8c94550 100644
+index bfbe22d..9db1973 100644
 --- a/runner/video/genesis_machine.c
 +++ b/runner/video/genesis_machine.c
 @@ -14,7 +14,9 @@
@@ -1098,8 +1106,24 @@ index bfbe22d..8c94550 100644
  
  #ifndef GEN_DEV_TRACE
  /* Prod builds: no ring memory, no captures, dumps report "not compiled in".
-@@ -430,11 +433,25 @@ uint32_t machine_z80_stamp(void)
+@@ -428,13 +431,41 @@ uint32_t machine_z80_stamp(void)
+     return s_line_base + s_z80_off;
+ }
  
++
++/* ---- Opt-in Z80 PC trace (GENESIS_Z80_TRACE=<from>..<to> frames) ---------- */
++void z80_trace_pc(uint16_t pc)
++{
++    static int on = -1; static long from = -1, to = -1;
++    if (on < 0) { const char *e = getenv("GENESIS_Z80_TRACE");
++                  on = (e && *e) ? 1 : 0;
++                  if (on) { if (sscanf(e, "%ld..%ld", &from, &to) != 2) { from = 0; to = 1; } } }
++    if (!on) return;
++    long f = (long)g_snd_frame;
++    if (f < from || f > to) return;
++    fprintf(stderr, "[ZPC] %lu %04X\n", (unsigned long)f, pc);
++}
++
  static void step_z80(GenesisMachine *m, uint32_t target)
  {
 +    /* Optional per-line Z80 stepping log: line, master cycle, debt in/out, PC.
@@ -1124,11 +1148,12 @@ index bfbe22d..8c94550 100644
  #ifdef GENESIS_Z80_RECOMP
          z80_recomp_reset();
          z80_recomp_mirror_to_interpreter(&m->z80);
-@@ -464,12 +481,17 @@ static void step_z80(GenesisMachine *m, uint32_t target)
+@@ -464,12 +495,18 @@ static void step_z80(GenesisMachine *m, uint32_t target)
          done+=z80_recomp_step_one();
  #else
          unsigned long c0 = m->z80.cyc;
 +        g_z80_pc_now = (uint16_t)m->z80.pc;
++        z80_trace_pc((uint16_t)m->z80.pc);
          z80_step(&m->z80);     /* one instruction, then interrupt processing */
          done += (uint32_t)(m->z80.cyc - c0);
  #endif
@@ -1142,7 +1167,7 @@ index bfbe22d..8c94550 100644
  #ifdef GEN_DEV_TRACE
      /* [SND-TRACE] V-int acceptance: pending fell 1->0 during this slice. */
      if (g_snd_trace && pend_before &&
-@@ -518,10 +540,40 @@ void genesis_indexed_sink_adapter(void *ctx,int line,const uint32_t *argb,int wi
+@@ -518,10 +555,40 @@ void genesis_indexed_sink_adapter(void *ctx,int line,const uint32_t *argb,int wi
      if(pixels && pixels->argb)pixels->argb(pixels->user,line,argb,width);
  }
  
@@ -1183,7 +1208,7 @@ index bfbe22d..8c94550 100644
      GenesisIndexedSink *pixels=sink==genesis_indexed_sink_adapter?(GenesisIndexedSink *)user:NULL;
      void *producer_user=pixels?pixels->user:user;
      int active_h = gvdp_screen_height(&m->vdp);
-@@ -529,6 +581,56 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+@@ -529,6 +596,56 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
      static uint32_t rowbuf[GVDP_MAX_WIDTH];
      static GVDPRasterRow raster;
  
@@ -1240,7 +1265,7 @@ index bfbe22d..8c94550 100644
      for (int line = 0; line < LINES_TOTAL; line++) {
          unsigned irq = gvdp_begin_scanline(&m->vdp, line);
          g_snd_line = (unsigned)line;   /* [SND-TRACE] */
-@@ -536,17 +638,29 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+@@ -536,17 +653,29 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
          s_z80_off   = 0;   /* 68K writes during the chunk below land at the line start */
  
          /* Advance the recompiled 68K ~one scanline (it parks at WaitForVBlank). */
@@ -1271,7 +1296,7 @@ index bfbe22d..8c94550 100644
  
          /* Deliver interrupts to the 68K (and the Z80 at vblank). */
          if (irq & GVDP_IRQ_VBLANK) {
-@@ -590,6 +704,7 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+@@ -590,6 +719,7 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
           * when no output is requested (found by the determinism probe,
           * 2026-09-25: replays without rendering forked in the vdp partition
           * in 1-2 of 691 dense probe passes per game). */
@@ -1279,7 +1304,7 @@ index bfbe22d..8c94550 100644
          if (line < active_h) {
              int dbl = gvdp_interlace_double(&m->vdp);
              for (int sub = 0; sub <= dbl; sub++) {
-@@ -635,11 +750,30 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+@@ -635,11 +765,30 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
          if (irq & GVDP_IRQ_HBLANK) glue_own_interrupt(4, &m->vdp);
  
          m->master_cycle += MASTER_PER_LINE;
@@ -1310,3 +1335,24 @@ index bfbe22d..8c94550 100644
 +#endif
 +}
 +
+diff --git a/runner/z80_recomp.c b/runner/z80_recomp.c
+index 8e411f1..b66222c 100644
+--- a/runner/z80_recomp.c
++++ b/runner/z80_recomp.c
+@@ -203,6 +203,8 @@ uint32_t z80_recomp_step_one(void)
+     return cycles;
+ }
+ 
++extern void z80_trace_pc(uint16_t pc);
++
+ uint32_t z80_recomp_run_slice(uint32_t done,uint32_t target,
+                               uint32_t *master_offset,uint32_t master_per_cycle)
+ {
+@@ -213,6 +215,7 @@ uint32_t z80_recomp_run_slice(uint32_t done,uint32_t target,
+      * Fallback explicitly materializes before entering the interpreter. */
+     while(done<target){
+         *master_offset=done*master_per_cycle;
++        z80_trace_pc((uint16_t)g_z80.pc);
+         done+=step_architecture();
+ #ifdef GEN_DEV_TRACE
+         /* Bus trace callbacks observe the previous completed instruction's
