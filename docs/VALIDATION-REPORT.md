@@ -2211,3 +2211,38 @@ that: the drum schedule is produced by the ROM's own 60 Hz logic.
 Warning for later sessions: `build/run-scale143.ps1` and `build/run-drumfix.ps1` are
 diagnostic launchers that deliberately alter audio rates; the plain executable uses the
 correct defaults.
+
+### 2026-11-18: regression fixed - experimental IRQ delivery reverted
+
+Three investigation changes had been left enabled by default and are now reverted:
+
+1. `slow_tick`: timer interrupts were delivered during FM-only music (52/s) on top of the
+   VBlank tick (60/s). The driver counts every interrupt as a tick in `$0040`, so this
+   inflated the music clock. Restored to PCM-gated delivery only.
+2. YM BUSY flag: the 230-cycle busy window I added for testing is now off unless
+   `GENESIS_YM_BUSY` asks for it.
+3. Key-on logging was unconditional in the bus hot path; now behind `GENESIS_KEYON_LOG`.
+
+Verification of the reverted build against the reference (WASAPI loopback of the default
+device, content alignment by 12-bin chroma, 50 ms frames):
+
+```
+window(our)  best_lag  corr
+  24-28 s    +35.1s   r=0.93
+  28-32 s    +36.0s   r=0.96
+  32-36 s    +34.9s   r=0.96
+  48-52 s    +35.1s   r=0.91
+  52-56 s    +33.2s   r=0.95
+  56-60 s    +35.0s   r=0.93
+  60-64 s    +35.0s   r=0.96
+  64-68 s    +35.0s   r=0.94
+  68-72 s    +34.9s   r=0.91
+```
+
+The offset is constant (~35 s, the scripted run reaches scenes earlier than the longplay's
+player) and the correlation is 0.91-0.96 through intro and battle, i.e. the same music at the
+same tempo. No drift, so no tempo error in the captures.
+
+Note: the capture device's mix format changed to 44.1 kHz 32-bit float mid-session
+(AUDCLNT_E_UNSUPPORTED_FORMAT for the former 48 kHz request). `build/wasapi_cap.c` now uses
+`GetMixFormat` and converts float to 16-bit PCM, so captures keep working.
