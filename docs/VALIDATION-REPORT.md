@@ -2076,3 +2076,44 @@ The drum pattern is therefore clocked by a divisor/counter upstream of the DAC (
 tick that walks `$1618-$1658`), not by the PCM timer. Next: measure that tick - the same
 main-loop tick drives the FM music, which sounds correct, so the drum voice must use a
 different divisor (likely a tempo table entry) that we are running at half length.
+
+### 2026-11-18: music sequencer entry decoded
+
+Traced the call path with the battle script at frame 3100 (the pattern processor is only
+reached with those inputs). Path: `$1483` -> `$14C4` (per-frame sequencer) -> `$14EC
+CALL $15D0` (pattern) -> loops inside `$15D0-$1619` -> returns, next voice.
+
+Sequencer entry block (Z80 RAM, self-modifying, dumped live at frame 3150):
+
+```
+1489: 3A 04 12    LD A,($1204)        ; tempo/command byte written by the 68K
+148C: 4F          LD C,A
+148D: FD 21 00 40 LD IY,$4000
+1491: FE 02       CP $02
+1493: 20 1E       JR NZ,$14B3
+1495: DD 7E 01    LD A,(IX+$01)
+1498: F6 15       OR $15
+149A: D9 47 D9    EXX / LD B,A / EXX
+149D: DD 7E 01    LD A,(IX+$01)
+14A0: F6 05       OR $05
+14A2: 67 2E 27    LD H,A / LD L,$27
+14A5: FD CB 00 7E BIT 7,(IY+$00)
+14A9: 20 FA       JR NZ,$14A5        ; wait for the YM to be ready
+14AB: 7D 32 00 40 LD A,L / LD ($4000),A   ; YM register select
+14AF: 7C 32 01 40 LD A,H / LD ($4001),A   ; YM register data
+14B3: 16 00       LD D,$00
+14B5: 79 FE 03    LD A,C / CP $03
+14B8: 38 04       JR C,$14BE
+14BA: D6 04 16 02 SUB $04 / LD D,$02
+14BE: 5F          LD E,A
+14BF: DD 66 00    LD H,(IX+$00)      ; per-voice flags
+14C2: CB 5C       BIT 3,H
+14C4: 28 10       JR Z,$14D6
+```
+
+So the engine converts the 68K tempo/command byte at `$1204` into per-voice YM register
+writes, gated by bit 3 of `(IX+$00)`. The 2x drum tempo therefore comes from how the drum
+voice interprets `$1204`/its flags byte, not from the timer or DAC.
+
+Next: dump `$14D6-$15D0` (the voice branch) and `(IX+$00)`/`(IX+$01)` for the drum voice
+(`IX=$18D5`) vs the melody voices, then compare the `$1204` handling.
