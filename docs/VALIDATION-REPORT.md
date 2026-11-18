@@ -1645,3 +1645,17 @@ Raising the buffer slack removed it entirely:
 device samples 1024 -> 2048, preroll 200 ms -> 350 ms
 callbacks=591 conceals=0 repeated=0 underruns=0 overflows=0
 ```
+
+### 2026-11-18: the fight itself cannot be reached without input
+
+A 11000-frame scripted run (title -> menu -> archetype -> intro, then 9000 frames of no
+input) shows the music playing until ~98 s (ambush window, peaks ~11000) and then silence
+from ~100 s onward: the game parks on the ambush card waiting for input, and the Z80
+idles in its wait loop (`pc $0041/$0062`) while the frame counter keeps advancing.
+
+The host-rate stream across that whole run has no clipping, no discontinuities and no
+dropouts, so the crackle the player reports in the fight is not reproducible headlessly -
+it needs a recorded session that carries the player's inputs through the battle.
+
+Session recording: `scripts/record-session.ps1` (writes replay, audio and RAM; the same
+mechanism produced the 20261115-204746 combat session used earlier).

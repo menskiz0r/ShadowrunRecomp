@@ -19,11 +19,264 @@ index 4dfc5fc..bdd1c30 160000
 @@ -1 +1 @@
 -Subproject commit 4dfc5fc29fd67d23714126348e678e45952e9462
 +Subproject commit bdd1c307cc553891de05b0c69903d328a00ae692
+diff --git a/runner/audio.c b/runner/audio.c
+index 9dab768..7e5353f 100644
+--- a/runner/audio.c
++++ b/runner/audio.c
+@@ -61,6 +61,10 @@ static void genesis_audio_callback(void *user, Uint8 *stream, int len)
+     int frames = len / (int)(2 * sizeof(int16_t)); /* stereo S16 */
+     Uint64 begin = SDL_GetPerformanceCounter();
+     rab_pull(&s_bridge, (int16_t *)stream, frames);
++   { static FILE *hd = NULL; static int htried = 0;
++     if (!htried) { htried = 1; const char *e = getenv("GENESIS_AUDIO_HOSTDUMP");
++                    if (e && *e) hd = fopen(e, "wb"); }
++     if (hd) { fwrite(stream, 1, (size_t)len, hd); fflush(hd); } }
+     uint32_t elapsed = (uint32_t)((SDL_GetPerformanceCounter() - begin)
+                                 * 1000000ull / s_perf_freq);
+     if (elapsed > s_callback_peak_us) s_callback_peak_us = elapsed;
+@@ -165,7 +169,7 @@ int audio_init(int psg_sample_rate)
+     want.freq     = s_output_rate;
+     want.format   = AUDIO_S16SYS;
+     want.channels = 2;
+-    want.samples  = 1024;
++    want.samples  = 2048;   /* more slack against frame jitter (was 1024) */
+     { const char *ds = getenv("GENESIS_AUDIO_SAMPLES");
+       if (ds && *ds) { int v = atoi(ds); if (v >= 256 && v <= 16384) want.samples = (Uint16)v; } }
+     want.callback = genesis_audio_callback;
+@@ -191,7 +195,7 @@ int audio_init(int psg_sample_rate)
+      * hitch for free (the servo drains the excess down to target over time),
+      * and stretch_enable (default 1) conceals brief producer stalls by a
+      * pitch-preserving loop of recent audio instead of fading to silence. */
+-    cfg.preroll_ms     = 200.0;
++    cfg.preroll_ms     = 200.0;   /* absorb jittery producers (was 200) */
+     cfg.stretch_enable = 1;     /* conceal on (defaults to 1; pinned explicit) */
+     if (rab_init(&s_bridge, &cfg) != 0) {
+         fprintf(stderr, "audio: rab_init (DRC bridge) failed\n");
+diff --git a/runner/m68k_interp.c b/runner/m68k_interp.c
+index c7adb60..1c0d9ee 100644
+--- a/runner/m68k_interp.c
++++ b/runner/m68k_interp.c
+@@ -1123,7 +1123,8 @@ static M68kiStatus exec_one(const M68KInstr *ins, uint32_t *next_pc) {
+  * This is the runtime tail code_generator.c's emit_cycle_accounting() appends
+  * after EVERY generated instruction:
+  *
+- *     g_native_insn_count++;
++ *     { static FILE *df = NULL; static int tried = 0;
++    g_native_insn_count++;
+  *     g_cycle_accumulator   += N;
+  *     g_audio_cycle_counter += N;
+  *     if (g_cycle_accumulator >= g_vblank_threshold) glue_check_vblank();
+@@ -1308,6 +1309,11 @@ static void interp_account_cycles(const M68KInstr *ins) {
+ #endif
+     if (cyc < 0) cyc = interp_estimate_cycles(ins);
+     if (cyc < 0) cyc = 4;                          /* never stall the clock */
++    { static FILE *df = NULL; static int tried = 0;
++      if (!tried) { tried = 1; const char *e = getenv("GENESIS_INTERP_COST_DUMP");
++                    if (e && *e) df = fopen(e, "w"); }
++      if (df) { fprintf(df, "0x%06X,0x%04X,%d,%d\n", ins->addr, ins->words[0],
++                         (int)ins->size, cyc); fflush(df); } }
+     g_native_insn_count++;
+     g_cycle_accumulator   += (uint32_t)cyc;
+     g_audio_cycle_counter += (uint32_t)cyc;
+diff --git a/runner/sim_step.c b/runner/sim_step.c
+index 5b530a1..33a15ed 100644
+--- a/runner/sim_step.c
++++ b/runner/sim_step.c
+@@ -42,9 +42,36 @@ void genesis_sim_input_restore(const GenesisSimInput *in) { if (in) s_in = *in;
+ uint32_t genesis_sim_tick_count(void) { return s_ticks; }
+ void genesis_sim_set_tick_count(uint32_t n) { s_ticks = n; }
+ 
++
++#ifdef _WIN32
++#include <windows.h>
++static double genesis_sim_now_us(void)
++{
++    static LARGE_INTEGER f; LARGE_INTEGER c;
++    if (!f.QuadPart) QueryPerformanceFrequency(&f);
++    QueryPerformanceCounter(&c);
++    return (double)c.QuadPart * 1e6 / (double)f.QuadPart;
++}
++#else
++#include <time.h>
++static double genesis_sim_now_us(void)
++{
++    struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
++    return (double)ts.tv_sec * 1e6 + (double)ts.tv_nsec / 1e3;
++}
++#endif
++static int genesis_sim_phase_on(void)
++{
++    static int on = -1;
++    if (on < 0) { const char *e = getenv("GENESIS_SIM_PHASE_LOG"); on = (e && *e && *e != '0'); }
++    return on;
++}
++
+ int genesis_sim_step(const GenesisSimInput *in, const GenesisSimAudio *audio,
+                      const GenesisSimHooks *hooks)
+ {
++    const int ph = genesis_sim_phase_on();
++    double t0 = ph ? genesis_sim_now_us() : 0, t_replay0 = t0, t_pre = 0, t_mach = 0, t_aud = 0, t_post = 0;
+     static const GenesisSimHooks no_hooks;
+     if (!hooks) hooks = &no_hooks;
+     GenesisSimInput sealed=in?*in:s_in;
+@@ -57,33 +84,46 @@ int genesis_sim_step(const GenesisSimInput *in, const GenesisSimAudio *audio,
+     if(g_game_spec.on_frame_pre)g_game_spec.on_frame_pre(s_ticks);
+ 
+     glue_reset_frame_sync();
+-    glue_run_game_frame();
++    { double a = ph ? genesis_sim_now_us() : 0;
++      glue_run_game_frame();
++      if (ph) t_pre = genesis_sim_now_us() - a; }
+     for (int port = 0; port < 2; port++) {
+         machine_set_pad_type(port, s_in.pad_type[port]);
+         machine_set_pad(port, s_in.pad[port]);
+     }
+     if (hooks->pre_raster) hooks->pre_raster(hooks->ctx);
+     glue_sched_frame_begin();        /* scheduler rule: busy-wait streaks restart */
+-    machine_run_frame_ex(hooks->sink, hooks->sink_user, hooks->producer);
++    { double a = ph ? genesis_sim_now_us() : 0;
++      machine_run_frame_ex(hooks->sink, hooks->sink_user, hooks->producer);
++      if (ph) t_mach = genesis_sim_now_us() - a; }
+ 
+     {
+         GenesisSimAudio scratch = { s_scratch_fm, SIM_SCRATCH_FM_FRAMES, NULL,
+                                     s_scratch_psg, SIM_SCRATCH_PSG_FRAMES, NULL };
+         const GenesisSimAudio *a = (audio && audio->fm && audio->psg) ? audio : &scratch;
+         size_t fm_n = 0, psg_n = 0;
++        double _a = ph ? genesis_sim_now_us() : 0;
+         audio_mixer_drain(GENESIS_SIM_WALL_FRAME_MASTER_CYCLES,
+                           a->fm,  a->fm_cap,  &fm_n,
+                           a->psg, a->psg_cap, &psg_n);
+         if (a->fm_count)  *a->fm_count  = fm_n;
+         if (a->psg_count) *a->psg_count = psg_n;
++        if (ph) t_aud = genesis_sim_now_us() - _a;
+     }
+     if (hooks->post_drain && !hooks->post_drain(hooks->ctx))
+         return 0;
+ 
+-    glue_service_vblank();
+-    glue_end_of_wall_frame();
++    { double a = ph ? genesis_sim_now_us() : 0;
++      glue_service_vblank();
++      glue_end_of_wall_frame();
++      if (ph) t_post = genesis_sim_now_us() - a; }
+     if(g_game_spec.on_frame_post)g_game_spec.on_frame_post(s_ticks);
+     s_ticks++;
+     genesis_replay_end();
++    if (ph) { double t1 = genesis_sim_now_us();
++        fprintf(stderr, "[SP] tick=%u total=%.0f pre=%.0f machine=%.0f audio=%.0f post=%.0f replay+other=%.0f\n",
++                (unsigned)s_ticks, t1 - t0, t_pre, t_mach, t_aud, t_post,
++                (t1 - t0) - t_pre - t_mach - t_aud - t_post);
++        (void)t_replay0; }
+     return 1;
+ }
 diff --git a/runner/video/genesis_bus.c b/runner/video/genesis_bus.c
-index 2358402..14ed8f6 100644
+index 2358402..af46f8e 100644
 --- a/runner/video/genesis_bus.c
 +++ b/runner/video/genesis_bus.c
-@@ -189,9 +189,13 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
+@@ -12,7 +12,8 @@ void gbus_68k_z80ram(unsigned off, uint8_t val);
+ #include <stdio.h>
+ #include <stdlib.h>
+ unsigned long g_vdp_data_writes = 0;
+-unsigned long g_ym_reads = 0, g_ym_tb_seen = 0;   /* 68K writes to the VDP data port */
++unsigned long g_ym_reads = 0, g_ym_tb_seen = 0;
++unsigned long g_ym_irq_count = 0, g_ym_ta_period = 0, g_ym_ta_fires = 0, g_ym_keyons = 0, g_ym_writes = 0;   /* 68K writes to the VDP data port */
+ static void z80cmd_log(uint16_t off, uint8_t val);
+ static void z80rd_log(uint32_t a, uint8_t val);
+ /* Log 68K READS of Z80 space (the driver handshake polls) for the sound hunt. */
+@@ -113,6 +114,11 @@ extern void glue_charge_68k_stall(uint32_t cycles);
+ #define YM_TIMER_B_MASTER_TICK   (16ull * 144ull * 7ull)
+ #define YM_TIMER_A_MASTER_TICK   (144ull * 7ull)
+ 
++/* The YM2612 timer overflow raises an IRQ to the Z80 when its enable bit is set.
++ * Without it a polling driver sees a flag far later than the hardware interrupt and
++ * can miss ticks (music races / desyncs). */
++extern void ym_raise_z80_irq(void);
++
+ static uint64_t ym_abs_z80_stamp(void)
+ {
+     return (uint64_t)g_snd_frame * MASTER_CYCLES_PER_FRAME +
+@@ -131,30 +137,54 @@ static uint64_t ym_timer_a_period(const GenesisBus *b)
+     return (uint64_t)(1024u - ta) * YM_TIMER_A_MASTER_TICK;
+ }
+ 
++
++/* The driver's interrupt handler at $0038 is entered for any Z80 IRQ. Raising the
++ * FM timer interrupt made tempo scale with the timer rate, so it is off unless
++ * GENESIS_YM_TIMER_IRQ=1 explicitly enables it. The status flag is still set, which
++ * is what a polling driver uses. */
++static int ym_timer_irq_enabled(void)
++{
++    static int on = -1;
++    if (on < 0) { const char *e = getenv("GENESIS_YM_TIMER_IRQ");
++                  on = (e && *e && *e != '0'); }
++    return on;
++}
++
+ static void ym_timer_update(GenesisBus *b, uint64_t now)
+ {
+     /* Timer A (the one Shadowrun's driver uses for its sequencer). */
+-    if (b->ym_timer_a_running && b->ym_timer_a_period != 0 &&
+-        now >= b->ym_timer_a_deadline) {
+-        if (b->ym_mode & 0x04u)         /* enable timer-A overflow flag */
+-            b->ym_status |= 0x01u;
+-        uint64_t elapsed = now - b->ym_timer_a_deadline;
+-        uint64_t periods = elapsed / b->ym_timer_a_period + 1u;
+-        b->ym_timer_a_deadline += periods * b->ym_timer_a_period;
++    if (b->ym_timer_a_running && b->ym_timer_a_period != 0) {
++        /* Deliver EVERY elapsed period, one interrupt each, so a driver counting
++         * ticks sees the rate the chip produces instead of one collapsed event. */
++        unsigned guard = 0;
++        while (now >= b->ym_timer_a_deadline && guard++ < 16u) {
++            b->ym_status |= 0x01u;      /* the flag sets on overflow regardless */
++            g_ym_ta_fires++;
++            if ((b->ym_mode & 0x04u) && ym_timer_irq_enabled()) { g_ym_irq_count++; ym_raise_z80_irq(); }
++            b->ym_timer_a_deadline += b->ym_timer_a_period;
++        }
++        if (guard >= 16u) {             /* fell far behind: snap to now */
++            b->ym_timer_a_deadline = now + b->ym_timer_a_period;
++        }
+     }
+ 
+     if (!b->ym_timer_b_running || b->ym_timer_b_period == 0 ||
+         now < b->ym_timer_b_deadline)
+         return;
+ 
+-    if (b->ym_mode & 0x08u)             /* enable timer-B overflow flag */
+-        b->ym_status |= 0x02u;
++    { unsigned guard = 0;
++      while (now >= b->ym_timer_b_deadline && guard++ < 16u) {
++          b->ym_status |= 0x02u;        /* the flag sets on overflow regardless */
++          if ((b->ym_mode & 0x08u) && ym_timer_irq_enabled()) ym_raise_z80_irq();
++          b->ym_timer_b_deadline += b->ym_timer_b_period;
++      }
++      if (guard >= 16u) b->ym_timer_b_deadline = now + b->ym_timer_b_period; }
++}
++
+ 
+-    /* Timer B is periodic while load/enable bit 1 remains set. Advance the
+-     * deadline past 'now' without an unbounded catch-up loop. */
+-    uint64_t elapsed = now - b->ym_timer_b_deadline;
+-    uint64_t periods = elapsed / b->ym_timer_b_period + 1u;
+-    b->ym_timer_b_deadline += periods * b->ym_timer_b_period;
++void gbus_ym_timer_service(GenesisBus *b, uint64_t now)
++{
++    ym_timer_update(b, now);
+ }
+ 
+ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
+@@ -171,6 +201,10 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
+     uint8_t reg = b->ym_addr[0];
+     { static int yl = -1;
+       if (yl < 0) { const char *e = getenv("GENESIS_YMREG_LOG"); yl = (e && *e && *e != '0'); }
++      if (reg == 0x28u) { extern unsigned long g_snd_frame;
++        g_ym_writes++;
++        if ((val & 0xF0u) == 0x00u || (val & 0x30u) == 0x30u) { g_ym_keyons++;
++          fprintf(stderr, "[YKEY] f=%lu val=%02X\n", g_snd_frame, val); } }
+       if (yl && (reg == 0x26u || reg == 0x27u || reg == 0x24u || reg == 0x25u))
+           fprintf(stderr, "[YMREG] f=%lu reg=%02X val=%02X\n", g_snd_frame, reg, val); }
+     if (reg == 0x24u) {
+@@ -189,9 +223,14 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
          if (val & 0x20u) b->ym_status &= 0xfdu;
          b->ym_mode = val;
          if (val & 0x01u) {                  /* bit 0: load/run timer A */
@@ -32,6 +285,7 @@ index 2358402..14ed8f6 100644
 +             * leaves it loaded must preserve the running timer's phase. */
 +            if (!b->ym_timer_a_running) {
 +                b->ym_timer_a_period = ym_timer_a_period(b);
++                g_ym_ta_period = (unsigned long)b->ym_timer_a_period;
 +                b->ym_timer_a_deadline = now + b->ym_timer_a_period;
 +            }
              b->ym_timer_a_running = 1;
@@ -39,3 +293,164 @@ index 2358402..14ed8f6 100644
          } else {
              b->ym_timer_a_running = 0;
          }
+diff --git a/runner/video/genesis_bus.h b/runner/video/genesis_bus.h
+index 3f9dcb7..bb12a64 100644
+--- a/runner/video/genesis_bus.h
++++ b/runner/video/genesis_bus.h
+@@ -166,4 +166,5 @@ void     gbus_z80_write(GenesisBus *b, uint16_t addr, uint8_t val);
+ uint8_t *gbus_sram_buffer(GenesisBus *b);
+ uint32_t gbus_sram_size(const GenesisBus *b);
+ 
++void gbus_ym_timer_service(GenesisBus *b, uint64_t now);
+ #endif /* GENESIS_BUS_H */
+diff --git a/runner/video/genesis_machine.c b/runner/video/genesis_machine.c
+index dd356e9..3cdb1ae 100644
+--- a/runner/video/genesis_machine.c
++++ b/runner/video/genesis_machine.c
+@@ -15,7 +15,8 @@
+ #include "chip_trace.h"   /* [CHIP-TRACE] shared FM/PSG stream ring + g_snd_* globals */
+ #include <string.h>
+ #include <stdlib.h>
+-#include <stdio.h>   /* [SND-TRACE] temporary sound-command lifecycle trace */
++#include <stdio.h>
++#include <time.h>   /* [SND-TRACE] temporary sound-command lifecycle trace */
+ 
+ GenesisMachine g_machine;
+ 
+@@ -539,10 +540,40 @@ void genesis_indexed_sink_adapter(void *ctx,int line,const uint32_t *argb,int wi
+     if(pixels && pixels->argb)pixels->argb(pixels->user,line,argb,width);
+ }
+ 
++
++/* ---- Local profiling (GENESIS_PHASE_LOG) ---------------------------------- */
++#ifdef _WIN32
++#include <windows.h>
++static double genesis_now_us(void)
++{
++    static LARGE_INTEGER freq;
++    LARGE_INTEGER c;
++    if (!freq.QuadPart) QueryPerformanceFrequency(&freq);
++    QueryPerformanceCounter(&c);
++    return (double)c.QuadPart * 1e6 / (double)freq.QuadPart;
++}
++#else
++#include <time.h>
++static double genesis_now_us(void)
++{
++    struct timespec ts;
++    clock_gettime(CLOCK_MONOTONIC, &ts);
++    return (double)ts.tv_sec * 1e6 + (double)ts.tv_nsec / 1e3;
++}
++#endif
++static int genesis_phase_log_on(void)
++{
++    static int on = -1;
++    if (on < 0) { const char *e = getenv("GENESIS_PHASE_LOG"); on = (e && *e && *e != '0'); }
++    return on;
++}
++
+ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+                           const GenesisScanlineProducer *producer)
+ {
+     GenesisMachine *m = &g_machine;
++    const int phase_log = genesis_phase_log_on();
++    double phase_68k = 0, phase_z80 = 0, phase_vdp = 0, phase_t0 = phase_log ? genesis_now_us() : 0;
+     GenesisIndexedSink *pixels=sink==genesis_indexed_sink_adapter?(GenesisIndexedSink *)user:NULL;
+     void *producer_user=pixels?pixels->user:user;
+     int active_h = gvdp_screen_height(&m->vdp);
+@@ -550,6 +581,27 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+     static uint32_t rowbuf[GVDP_MAX_WIDTH];
+     static GVDPRasterRow raster;
+ 
++    { static int ft = -1; static uint64_t prev_ns = 0;
++      if (ft < 0) { const char *e = getenv("GENESIS_FRAMETIME_LOG"); ft = (e && *e && *e != '0'); }
++      if (ft) { clock_t now_c = clock();
++                if (prev_ns) fprintf(stderr, "[FT] f=%lu us=%llu\n", g_snd_frame,
++                                     (unsigned long long)((uint64_t)(now_c - (clock_t)prev_ns) * 1000000ull /
++                                                          (unsigned long long)CLOCKS_PER_SEC));
++                prev_ns = (uint64_t)now_c; } }
++    { static int cl = -1;
++      if (cl < 0) { const char *e = getenv("GENESIS_COUNTER_LOG"); cl = (e && *e && *e != '0'); }
++      if (cl) { extern unsigned long g_ym_irq_count, g_ym_ta_period, g_ym_ta_fires, g_ym_keyons, g_ym_writes;
++                fprintf(stderr, "[YMT] f=%lu irq=%lu fires=%lu period=%lu keyons=%lu writes=%lu\n",
++                        g_snd_frame, g_ym_irq_count, g_ym_ta_fires, g_ym_ta_period,
++                        g_ym_keyons, g_ym_writes);
++                g_ym_irq_count = 0; g_ym_ta_fires = 0; g_ym_keyons = 0; g_ym_writes = 0; }
++      if (cl) { extern unsigned char g_ram[];
++                unsigned vb = ((unsigned)g_ram[0xF9EC]<<24)|((unsigned)g_ram[0xF9ED]<<16)|
++                              ((unsigned)g_ram[0xF9EE]<<8)|(unsigned)g_ram[0xF9EF];
++                unsigned wait = ((unsigned)g_ram[0xDF88]<<8)|(unsigned)g_ram[0xDF89];
++                extern unsigned machine_z80_pc(void);
++                fprintf(stderr, "[CNT] f=%lu vb=%u wait=%u z80pc=%04X\n", g_snd_frame, vb, wait,
++                        machine_z80_pc() & 0xFFFFu); } }
+     { static int il = -1; static uint64_t prev = 0;
+       extern uint64_t g_native_insn_count;
+       if (il < 0) { const char *e = getenv("GENESIS_INSN_FRAME_LOG"); il = (e && *e && *e != '0'); }
+@@ -575,7 +627,10 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+         s_z80_off   = 0;   /* 68K writes during the chunk below land at the line start */
+ 
+         /* Advance the recompiled 68K ~one scanline (it parks at WaitForVBlank). */
++        double _t0 = phase_log ? genesis_now_us() : 0;
+         glue_run_game_chunk(M68K_PER_LINE);
++        double _t1 = phase_log ? genesis_now_us() : 0;
++        phase_68k += _t1 - _t0;
+ 
+         /* If a prior V-int was latched while the 68K had IRQs masked (e.g. a
+          * move #$2700,sr screen transition), deliver it now that the chunk above
+@@ -584,8 +639,17 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+         glue_own_vint_service_latched(&m->vdp);
+         glue_own_hint_service_latched(&m->vdp);
+ 
++        /* Advance the FM timers on the schedule, one interrupt per elapsed
++         * period, so the sound driver sees the chip's real tick rate. */
++        gbus_ym_timer_service(&m->bus,
++            (uint64_t)g_snd_frame * ((uint64_t)LINES_TOTAL * MASTER_PER_LINE) +
++            (uint64_t)line * MASTER_PER_LINE);
++
+         /* Step the Z80 (SMPS driver) for its share of the line. */
++        double _z0 = phase_log ? genesis_now_us() : 0;
+         step_z80(m, Z80_PER_LINE);
++        double _z1 = phase_log ? genesis_now_us() : 0;
++        phase_z80 += _z1 - _z0;
+ 
+         /* Deliver interrupts to the 68K (and the Z80 at vblank). */
+         if (irq & GVDP_IRQ_VBLANK) {
+@@ -629,6 +693,7 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+          * when no output is requested (found by the determinism probe,
+          * 2026-09-25: replays without rendering forked in the vdp partition
+          * in 1-2 of 691 dense probe passes per game). */
++        double _r0 = phase_log ? genesis_now_us() : 0;
+         if (line < active_h) {
+             int dbl = gvdp_interlace_double(&m->vdp);
+             for (int sub = 0; sub <= dbl; sub++) {
+@@ -674,11 +739,30 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+         if (irq & GVDP_IRQ_HBLANK) glue_own_interrupt(4, &m->vdp);
+ 
+         m->master_cycle += MASTER_PER_LINE;
++        if (phase_log) phase_vdp += genesis_now_us() - _r0;
+     }
+     g_snd_frame++;   /* [SND-TRACE] */
++
++    if (phase_log) {
++        double t1 = genesis_now_us();
++        fprintf(stderr, "[PH] f=%lu total=%.0f 68k=%.0f z80=%.0f vdp=%.0f other=%.0f\n",
++                g_snd_frame, t1 - phase_t0, phase_68k, phase_z80, phase_vdp,
++                (t1 - phase_t0) - phase_68k - phase_z80 - phase_vdp);
++    }
+ }
+ 
+ void machine_run_frame(GenesisScanlineSink sink, void *user)
+ {
+     machine_run_frame_ex(sink, user, NULL);
+ }
++
++void ym_raise_z80_irq(void)
++{
++    /* Same delivery path as the V-int: assert and let the next Z80 step take it. */
++#ifdef GENESIS_Z80_RECOMP
++    z80_recomp_assert_irq();
++#else
++    g_machine.z80.int_pending = 1;
++#endif
++}
++
