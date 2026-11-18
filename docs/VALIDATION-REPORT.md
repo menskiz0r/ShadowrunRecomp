@@ -2177,3 +2177,37 @@ sequenced by the 68K->Z80 command stream at track start, not by timers.
 Next: trace the track-start command (the $1204/$1205 pair and the driver's pattern pointer
 at track start) and compare the pattern position the driver begins from against the slow
 statement.
+
+### 2026-11-18: verified - battle drum timing matches the reference at content alignment
+
+Aligned the port's capture to the longplay by musical content (12-bin chroma of the
+50-420 Hz band, 100 ms frames): best lag 35.0 s at r=0.63, i.e. `reference = port + 35 s`
+(the scripted run reaches the scenes earlier than the longplay's player).
+
+Drum period per 2 s window at that alignment:
+
+```
+ our_t  ref_t   our period      ref period
+   48    83     182ms (r=0.59)    182ms (r=0.67)
+   50    85     244ms (r=0.58)    244ms (r=0.73)
+   52    87     244ms (r=0.76)    244ms (r=0.70)
+   54    89     244ms (r=0.59)    244ms (r=0.83)
+   60    95     244ms (r=0.58)    244ms (r=0.74)
+   62    97     244ms (r=0.70)    244ms (r=0.72)
+   64    99     244ms (r=0.66)    244ms (r=0.72)
+   66   101     244ms (r=0.35)    244ms (r=0.48)
+   70   105     152ms (r=0.44)    152ms (r=0.54)
+```
+
+Every window matches. The 452-488 ms figure the investigation originally chased belongs to
+the longplay's earlier passage (69-80 s), which aligns with our intro music, not the battle
+(lag 35 s puts our 48 s at the longplay's 83 s).
+
+Conclusion: there is no 2x drum-tempo defect. The battle percussion runs at the same period
+as the reference, and the invariant results of the whole timing matrix (timer IRQs, Z80
+speed, PCM rate, VBlank rate, interpreter vs recompiled, RNG seeds) are consistent with
+that: the drum schedule is produced by the ROM's own 60 Hz logic.
+
+Warning for later sessions: `build/run-scale143.ps1` and `build/run-drumfix.ps1` are
+diagnostic launchers that deliberately alter audio rates; the plain executable uses the
+correct defaults.
