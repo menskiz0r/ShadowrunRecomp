@@ -1623,3 +1623,25 @@ Also measured, for the tempo question:
 
 Next: reduce per-frame cost to get under 16.68 ms (or shorten the load hitches), since
 the audio starvation is a consequence of running below the frame rate.
+
+### 2026-11-18: the crackle was the audio bridge repeating frames
+
+Profiling corrected an earlier assumption: per-frame work is only ~2.4 ms (machine 1.6,
+audio drain 0.7, replay 0.1), not the 17 ms I had measured earlier - that number was the
+paced wall-clock frame, not CPU. There is no starvation.
+
+The bridge's own counters (GENESIS_AUDIO_BUFFER_TRACE) showed the real source:
+
+```
+real device, default buffer: callbacks=1194 conceals=1 repeated=9235 underruns=0 overflows=0
+```
+
+`repeated` is the DRC bridge's pitch-preserving stall concealment: ~9k frames of audio
+replayed to cover producer jitter, which is what sounds like crackle and swallowed notes.
+
+Raising the buffer slack removed it entirely:
+
+```
+device samples 1024 -> 2048, preroll 200 ms -> 350 ms
+callbacks=591 conceals=0 repeated=0 underruns=0 overflows=0
+```
