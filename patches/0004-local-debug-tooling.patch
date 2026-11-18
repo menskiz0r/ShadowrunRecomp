@@ -163,6 +163,32 @@ index 618a9bd..cbd5561 100644
 +    if (bits) *bits = cosim_pad_bits;
 +    return cosim_pad_active;
 +}
+diff --git a/runner/diagnostic_replay.c b/runner/diagnostic_replay.c
+index 21b945e..a24e027 100644
+--- a/runner/diagnostic_replay.c
++++ b/runner/diagnostic_replay.c
+@@ -353,10 +353,17 @@ int genesis_replay_init(const char *directory, const char *playback,
+     }
+     void *boot = NULL;
+     size_t n = 0;
+-    if (!read_snapshot(&boot, &n) || n != sram_n || (n && !sram)) {
+-      free(boot);
+-      fail("invalid startup SRAM attachment");
+-      return 0;
++    /* Always consume the boot snapshot so the stream stays in sync; the size
++     * check can be bypassed for replays recorded on a different SRAM state
++     * (GENESIS_REPLAY_SKIP_SRAM=1). */
++    { static int skip_sram = -1;
++      if (skip_sram < 0) { const char *e = getenv("GENESIS_REPLAY_SKIP_SRAM");
++                           skip_sram = (e && *e && *e != '0'); }
++      if (!read_snapshot(&boot, &n) || (!skip_sram && (n != sram_n || (n && !sram)))) {
++        free(boot);
++        fail("invalid startup SRAM attachment");
++        return 0;
++      }
+     }
+     /* The desktop applied the boot image before its SRAM-loaded callback.
+      * Reapplying here would undo legitimate changes made by that callback. */
 diff --git a/runner/glue.c b/runner/glue.c
 index 9678eef..d014f12 100644
 --- a/runner/glue.c
@@ -1096,7 +1122,7 @@ index 242774c..bb12a64 100644
 +void gbus_ym_timer_service(GenesisBus *b, uint64_t now);
  #endif /* GENESIS_BUS_H */
 diff --git a/runner/video/genesis_machine.c b/runner/video/genesis_machine.c
-index bfbe22d..9db1973 100644
+index bfbe22d..2b08433 100644
 --- a/runner/video/genesis_machine.c
 +++ b/runner/video/genesis_machine.c
 @@ -14,7 +14,9 @@
@@ -1162,12 +1188,23 @@ index bfbe22d..9db1973 100644
  #ifdef GENESIS_Z80_RECOMP
          z80_recomp_reset();
          z80_recomp_mirror_to_interpreter(&m->z80);
-@@ -464,12 +495,18 @@ static void step_z80(GenesisMachine *m, uint32_t target)
+@@ -464,12 +495,29 @@ static void step_z80(GenesisMachine *m, uint32_t target)
          done+=z80_recomp_step_one();
  #else
          unsigned long c0 = m->z80.cyc;
 +        g_z80_pc_now = (uint16_t)m->z80.pc;
 +        z80_trace_pc((uint16_t)m->z80.pc);
++        { static int zt = -1;
++          if (zt < 0) { const char *e = getenv("GENESIS_ZTERM_LOG"); zt = (e && *e && *e != '0'); }
++          if (zt && m->z80.pc == 0x15D2u) {
++              unsigned bc = ((unsigned)m->z80.b << 8) | m->z80.c;
++              unsigned off = bc & 0x1FFFu;
++              unsigned sp = m->z80.sp & 0x1FFFu;
++              unsigned ra = m->bus.z80_ram[sp] | (m->bus.z80_ram[(sp+1)&0x1FFFu] << 8);
++              unsigned ix = m->z80.ix & 0x1FFFu;
++              fprintf(stderr, "[ZTERM] f=%lu bc=%04X off=%04X byte=%02X sp=%04X ret=%04X ix=%04X ix1=%02X\n",
++                      g_snd_frame, bc, off, m->bus.z80_ram[off], sp, ra, ix,
++                      m->bus.z80_ram[(ix+1)&0x1FFFu]); fflush(stderr); } }
          z80_step(&m->z80);     /* one instruction, then interrupt processing */
          done += (uint32_t)(m->z80.cyc - c0);
  #endif
@@ -1181,7 +1218,7 @@ index bfbe22d..9db1973 100644
  #ifdef GEN_DEV_TRACE
      /* [SND-TRACE] V-int acceptance: pending fell 1->0 during this slice. */
      if (g_snd_trace && pend_before &&
-@@ -518,10 +555,40 @@ void genesis_indexed_sink_adapter(void *ctx,int line,const uint32_t *argb,int wi
+@@ -518,10 +566,40 @@ void genesis_indexed_sink_adapter(void *ctx,int line,const uint32_t *argb,int wi
      if(pixels && pixels->argb)pixels->argb(pixels->user,line,argb,width);
  }
  
@@ -1222,7 +1259,7 @@ index bfbe22d..9db1973 100644
      GenesisIndexedSink *pixels=sink==genesis_indexed_sink_adapter?(GenesisIndexedSink *)user:NULL;
      void *producer_user=pixels?pixels->user:user;
      int active_h = gvdp_screen_height(&m->vdp);
-@@ -529,6 +596,56 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+@@ -529,6 +607,56 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
      static uint32_t rowbuf[GVDP_MAX_WIDTH];
      static GVDPRasterRow raster;
  
@@ -1279,7 +1316,7 @@ index bfbe22d..9db1973 100644
      for (int line = 0; line < LINES_TOTAL; line++) {
          unsigned irq = gvdp_begin_scanline(&m->vdp, line);
          g_snd_line = (unsigned)line;   /* [SND-TRACE] */
-@@ -536,17 +653,29 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+@@ -536,17 +664,29 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
          s_z80_off   = 0;   /* 68K writes during the chunk below land at the line start */
  
          /* Advance the recompiled 68K ~one scanline (it parks at WaitForVBlank). */
@@ -1310,7 +1347,7 @@ index bfbe22d..9db1973 100644
  
          /* Deliver interrupts to the 68K (and the Z80 at vblank). */
          if (irq & GVDP_IRQ_VBLANK) {
-@@ -590,6 +719,7 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+@@ -590,6 +730,7 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
           * when no output is requested (found by the determinism probe,
           * 2026-09-25: replays without rendering forked in the vdp partition
           * in 1-2 of 691 dense probe passes per game). */
@@ -1318,7 +1355,7 @@ index bfbe22d..9db1973 100644
          if (line < active_h) {
              int dbl = gvdp_interlace_double(&m->vdp);
              for (int sub = 0; sub <= dbl; sub++) {
-@@ -635,11 +765,30 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+@@ -635,11 +776,30 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
          if (irq & GVDP_IRQ_HBLANK) glue_own_interrupt(4, &m->vdp);
  
          m->master_cycle += MASTER_PER_LINE;
@@ -1350,7 +1387,7 @@ index bfbe22d..9db1973 100644
 +}
 +
 diff --git a/runner/z80_recomp.c b/runner/z80_recomp.c
-index 8e411f1..b66222c 100644
+index 8e411f1..a3faed2 100644
 --- a/runner/z80_recomp.c
 +++ b/runner/z80_recomp.c
 @@ -203,6 +203,8 @@ uint32_t z80_recomp_step_one(void)
@@ -1362,11 +1399,22 @@ index 8e411f1..b66222c 100644
  uint32_t z80_recomp_run_slice(uint32_t done,uint32_t target,
                                uint32_t *master_offset,uint32_t master_per_cycle)
  {
-@@ -213,6 +215,7 @@ uint32_t z80_recomp_run_slice(uint32_t done,uint32_t target,
+@@ -213,6 +215,18 @@ uint32_t z80_recomp_run_slice(uint32_t done,uint32_t target,
       * Fallback explicitly materializes before entering the interpreter. */
      while(done<target){
          *master_offset=done*master_per_cycle;
 +        z80_trace_pc((uint16_t)g_z80.pc);
++        { static int zt = -1;
++          if (zt < 0) { const char *e = getenv("GENESIS_ZTERM_LOG"); zt = (e && *e && *e != '0'); }
++          if (zt && g_z80.pc == 0x15D2u) {
++              unsigned bc = ((unsigned)g_z80.b << 8) | g_z80.c;
++              unsigned off = bc & 0x1FFFu;
++              unsigned sp = g_z80.sp & 0x1FFFu;
++              unsigned ra = g_machine.bus.z80_ram[sp] | (g_machine.bus.z80_ram[(sp+1)&0x1FFFu] << 8);
++              unsigned ix = g_z80.ix & 0x1FFFu;
++              fprintf(stderr, "[ZTERM] f=%lu bc=%04X off=%04X byte=%02X sp=%04X ret=%04X ix=%04X ix1=%02X\n",
++                      g_snd_frame, bc, off, g_machine.bus.z80_ram[off], sp, ra, ix,
++                      g_machine.bus.z80_ram[(ix+1)&0x1FFFu]); fflush(stderr); } }
          done+=step_architecture();
  #ifdef GEN_DEV_TRACE
          /* Bus trace callbacks observe the previous completed instruction's

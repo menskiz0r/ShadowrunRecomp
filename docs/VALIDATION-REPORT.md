@@ -2025,3 +2025,30 @@ rather than a defect.
 The player's live session remains the authoritative source. Comparing its drum section with
 the reference (452 ms vs 318 ms earlier, before the PCM fixes) should be re-run now that
 PCM streams correctly, using the same onset analysis on `sessions/20261118-071737` audio.
+
+### 2026-11-18: system-level capture - drums measure ~2x fast
+
+Added `build/wasapi_cap.c`: WASAPI loopback recording of the default output device at
+48 kHz stereo (`wasapi_cap <out.wav> <seconds>`). The captured levels match the host dump
+exactly, confirming the game's device output equals the dumped host audio.
+
+Replayed the player's recorded pad timeline (six events: START at frame 1107, A at 1346 and
+1369) from `build/sessions/20261118-071737/run.log` and recorded the system output.
+
+Drum period measurements (2 s windows, envelope autocorrelation):
+
+```
+our system capture  48 s: 182 ms (r=0.72)   52 s: 244 ms (r=0.75)   54 s: 244 ms (r=0.60)
+reference ambush    73 s: 452 ms (r=0.30)   75 s: 454 ms (r=0.40)   79 s: 450 ms (r=0.40)
+```
+
+So the drums run ~1.85-2x faster than the reference. Pairs closest to a clean ratio:
+244 vs 454 ms = 1.86, and 454/2 = 227 ms lies inside our spread, suggesting a factor-of-2
+rate error rather than the 1.43 inferred earlier (that came from a window where scripted
+input had advanced the scene, so it is not trustworthy).
+
+A factor of two also maps onto a common PCM rate: 7610 / 2 = 3805 Hz.
+
+Next: test halving the drum stream rate specifically (the continuous high-rate PCM stream)
+and compare with `ref_0_130.pcm`; if 3805 Hz is right, the drum sample plays at its authored
+rate and the voices (7610 Hz) stay untouched.
