@@ -2395,3 +2395,26 @@ so the game asks for a cue and the driver starts a different one than the longpl
 Next: trace how the driver handles the FF 20 xx command at f=2861 (track select / start) and
 compare the track data it loads with the cue the longplay plays. This is the first concrete,
 scene-anchored defect found in the music path.
+
+### 2026-11-18: music command path traced to the banked ROM window
+
+The ambush music command is three bytes through the ring: `FF 10 2E/2F`. The driver's
+dispatch table at `$0955` maps the second byte (`$10`) to `$0A84`, which reads the parameter
+and calls `$0BDF`. That routine uses the parameter as an index into a pointer table at
+`$0AAB` (observed value `$9609`) and copies a 0x21-byte header into `$0BBD`.
+
+`$9609` is in the Z80's banked 68K window, so the track data comes from ROM through the
+`$6000` bank register. The bank register is written 9936 times during a run (9-bit shift
+protocol); the implementation is `bank = (bank >> 1) | ((val & 1) << 8)`, matching hardware.
+
+`FF 20 xx` (also seen at f=2861-2878) is not a tempo: it writes `$15CF`, which is added to
+`(IX+$1E)` and clamped in the sequencer's volume path (`$11FA`), i.e. the card's music
+fade-in (20, 40, 60, 80, 100, 120).
+
+So the game requests the ambush cue at the same script points in the port as in the
+longplay's scene, and the track data comes from the same ROM table. The remaining
+difference - the port sounding the 244 ms battle figure where the longplay has a 452 ms
+cue - is therefore in how/when the driver starts that cue, not in the cue data itself.
+Next: log the driver's track-start state (`$0BBD` header fields and the sequencer position
+registers) right after the `FF 10 2F` command at f=2544 and compare against the cue's slow
+opening.
