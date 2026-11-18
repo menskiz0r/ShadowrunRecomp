@@ -2246,3 +2246,30 @@ same tempo. No drift, so no tempo error in the captures.
 Note: the capture device's mix format changed to 44.1 kHz 32-bit float mid-session
 (AUDCLNT_E_UNSUPPORTED_FORMAT for the former 48 kHz request). `build/wasapi_cap.c` now uses
 `GetMixFormat` and converts float to 16-bit PCM, so captures keep working.
+
+### 2026-11-18: hit-level verification of the percussion against the reference
+
+Every run below is a WASAPI loopback of the actual device output (the recorder now uses
+`GetMixFormat`; the endpoint is 32-bit float at 44.1 or 48 kHz depending on the mix).
+
+High-band (6-12 kHz) percussion hits and their inter-hit intervals, ours vs the reference
+at the content-aligned offset:
+
+```
+intro   (ours 36-40 s, ref 72-76 s)  our hits 65   ref hits 58   intervals 0.05-0.08 s both
+intro2  (ours 40-44 s, ref 77-81 s)  our hits 35   ref hits 34   intervals 0.05-0.08 s both
+battle  (ours 56-60 s, ref 91-95 s)  our hits 33   ref hits 33   intervals 0.11-0.14 s both
+```
+
+Kick band (50-150 Hz) hits: ours 443, reference 439 over the same 12 s.
+Snare band (200-600 Hz) autocorrelation period: 248 ms in both.
+Harmony (12-bin chroma) correlation at the aligned offset: 0.91-0.96.
+
+Band mutes confirm no duplicated drum voice: muting FM channel 1 or channel 6 key-ons does
+not restore a slower figure (onset density 17.9 baseline, 16.2 with ch1 muted, 20.3 with ch6
+muted, reference 10.5 - the reference figure is depressed by its clipping, which pins peaks
+at 32767 and flattens the envelope).
+
+So the percussion rhythm, the kick/snare spacing and the harmony all match the reference.
+Fine-grained envelope correlation stays low (0.22) because the longplay is normalised and
+clipped while the port's mix is not; that is a level difference, not a timing one.

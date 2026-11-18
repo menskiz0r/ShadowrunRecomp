@@ -745,7 +745,7 @@ index 5b530a1..33a15ed 100644
      return 1;
  }
 diff --git a/runner/video/genesis_bus.c b/runner/video/genesis_bus.c
-index d0e1647..55d0f07 100644
+index d0e1647..94e8055 100644
 --- a/runner/video/genesis_bus.c
 +++ b/runner/video/genesis_bus.c
 @@ -7,6 +7,36 @@
@@ -895,7 +895,7 @@ index d0e1647..55d0f07 100644
  }
  
  static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
-@@ -131,10 +236,54 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
+@@ -131,10 +236,58 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
          b->ym_addr[bank] = val;
          return;
      }
@@ -922,6 +922,10 @@ index d0e1647..55d0f07 100644
 +                          keylog = (e && *e && *e != '0');
 +                          e = getenv("GENESIS_MUTE_CH6");
 +                          mute6 = (e && *e && *e != '0'); }
++        { static int mute1 = -1;
++          if (mute1 < 0) { const char *e = getenv("GENESIS_MUTE_CH1");
++                           mute1 = (e && *e && *e != '0'); }
++          if (mute1 && (val & 7u) == 1u) return; }
 +        if (mute6 && (val & 7u) == 6u) return;
 +        if (keylog) {
 +            extern unsigned long g_snd_frame;
@@ -954,7 +958,7 @@ index d0e1647..55d0f07 100644
          b->ym_timer_b = val;
          b->ym_timer_b_period =
              (uint64_t)(256u - (unsigned)val) * YM_TIMER_B_MASTER_TICK;
-@@ -145,6 +294,29 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
+@@ -145,6 +298,29 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
          if (val & 0x10u) b->ym_status &= 0xfeu;
          if (val & 0x20u) b->ym_status &= 0xfdu;
          b->ym_mode = val;
@@ -984,7 +988,7 @@ index d0e1647..55d0f07 100644
          if (val & 0x02u) {
              /* Loading starts a stopped timer. A flag acknowledgement that
               * leaves it loaded must preserve the running timer's phase. */
-@@ -358,6 +530,7 @@ uint16_t gbus_read16(GenesisBus *b, uint32_t a)
+@@ -358,6 +534,7 @@ uint16_t gbus_read16(GenesisBus *b, uint32_t a)
               * driver decompression's back-reference copy (MOVE.B (A4,D4.W),
               * (A5)+) — the S2 silent-audio bug. */
              unsigned off = a & 0x1FFFu;
@@ -992,7 +996,7 @@ index d0e1647..55d0f07 100644
              return (uint16_t)(((uint16_t)b->z80_ram[off] << 8)
                                | b->z80_ram[(off + 1u) & 0x1FFFu]);
          }
-@@ -419,15 +592,50 @@ uint8_t gbus_peek8(const GenesisBus *b, uint32_t a)
+@@ -419,15 +596,50 @@ uint8_t gbus_peek8(const GenesisBus *b, uint32_t a)
  {
      a &= 0xFFFFFFu;
      if (a >= 0xA00000u && a < 0xA10000u && (a & 0xFFFFu) < 0x2000u)
@@ -1044,7 +1048,7 @@ index d0e1647..55d0f07 100644
      a &= 0xFFFFFFu;
      if (a >= 0xFF0000u) {                                            /* RAM     */
          uint16_t o = (uint16_t)(a & 0xFFFFu);
-@@ -460,7 +668,7 @@ void gbus_write16(GenesisBus *b, uint32_t a, uint16_t v)
+@@ -460,7 +672,7 @@ void gbus_write16(GenesisBus *b, uint32_t a, uint16_t v)
          if ((a & 0xFFFFu) < 0x2000u) { unsigned off = a & 0x1FFFu;
              snd_trace_68k_write((uint16_t)off, b->z80_ram[off], (uint8_t)(v >> 8),
                                  b->z80_busreq, b->z80_reset_off);  /* [SND-TRACE] */
@@ -1053,7 +1057,7 @@ index d0e1647..55d0f07 100644
          if (a >= 0xA04000u && a <= 0xA04003u) {
              uint8_t port = (uint8_t)(a & 3);
              ym_write_side_effect(b, port, (uint8_t)v, ym_abs_68k_stamp());
-@@ -503,6 +711,8 @@ uint8_t gbus_read8(GenesisBus *b, uint32_t a)
+@@ -503,6 +715,8 @@ uint8_t gbus_read8(GenesisBus *b, uint32_t a)
  
  void gbus_write8(GenesisBus *b, uint32_t a, uint8_t v)
  {
@@ -1062,7 +1066,7 @@ index d0e1647..55d0f07 100644
      a &= 0xFFFFFFu;
      uint8_t *extra_ram = expansion_ram_at(a, 1);
      if (extra_ram) { *extra_ram = v; return; }
-@@ -512,7 +722,7 @@ void gbus_write8(GenesisBus *b, uint32_t a, uint8_t v)
+@@ -512,7 +726,7 @@ void gbus_write8(GenesisBus *b, uint32_t a, uint8_t v)
          if ((a & 0xFFFFu) < 0x2000u) { unsigned off = a & 0x1FFFu;
              snd_trace_68k_write((uint16_t)off, b->z80_ram[off], v,
                                  b->z80_busreq, b->z80_reset_off);  /* [SND-TRACE] */
@@ -1071,7 +1075,7 @@ index d0e1647..55d0f07 100644
          if (a >= 0xA04000u && a <= 0xA04003u) {
              uint8_t port = (uint8_t)(a & 3);
              ym_write_side_effect(b, port, v, ym_abs_68k_stamp());
-@@ -534,7 +744,12 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
+@@ -534,7 +748,12 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
      /* YM2612 status: BUSY is clear; timer flags advance on scheduler time. */
      if (addr < 0x6000u) {
          ym_timer_update(b, ym_abs_z80_stamp());
@@ -1085,7 +1089,7 @@ index d0e1647..55d0f07 100644
      }
      if (addr < 0x8000u) return 0xFFu;                               /* bank/PSG   */
      /* $8000-$FFFF: banked window into the 68K bus. */
-@@ -542,10 +757,51 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
+@@ -542,10 +761,51 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
      return gbus_read8(b, a68);
  }
  
@@ -1137,7 +1141,7 @@ index d0e1647..55d0f07 100644
          b->z80_ram[off] = val; return; }                           /* RAM+mirror */
      if (addr < 0x6000u) {
          uint8_t port = (uint8_t)(addr & 3);
-@@ -562,6 +818,7 @@ void gbus_z80_write(GenesisBus *b, uint16_t addr, uint8_t val)
+@@ -562,6 +822,7 @@ void gbus_z80_write(GenesisBus *b, uint16_t addr, uint8_t val)
          b->z80_bank = ((b->z80_bank >> 1) | ((val & 1) << 8)) & 0x1FF;
          return;
      }
