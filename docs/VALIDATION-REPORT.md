@@ -1682,3 +1682,32 @@ executions matched") but is rejected after the next rebuild with `invalid startu
 attachment`: the recorder stores the post-play SRAM as the `.sav` sidecar, while the
 replay's boot snapshot expects the startup SRAM. Next step is to fix that recorder/loader
 mismatch (or archive the startup SRAM), then instrument the DAC path against the fight.
+
+### 2026-11-18: PCM (drums/voices) restored - timer A reload + interrupt
+
+The player's report (drums and death voices missing) identified the DAC/PCM path. Two
+model bugs kept it silent:
+
+1. **Timer A was never reloaded with a new period.** Shadowrun arms timer A with TA=0
+   (52 Hz) during the intro and re-programs it to `$24=$FE,$25=$01` (period 7 * 1008 =
+   7056 master cycles = 7609 Hz, a PCM rate) when the ambush starts, writing
+   `$27=$55` (load + enable + flag reset). Our phase-preservation rule ignored the new
+   period because the timer was already running, so it stayed at 52 Hz.
+   Fix: a load written together with the flag reset (bit 4), or with a changed period,
+   restarts the timer with the new value; a plain acknowledgement still preserves phase.
+
+2. **The timer interrupt was disabled by default.** The driver streams one DAC byte per
+   timer interrupt, so with the interrupt off it managed one byte per frame.
+
+Measured with both fixed (ambush window):
+
+```
+                   intro key-ons   ambush DAC bytes   ambush key-ons
+IRQ off (before)      28.71/s            36/s             4.99/s
+IRQ on  (after)       28.71/s          1730/s            16.15/s
+timer period          1032192 (52 Hz)   -> 7056 (7609 Hz)
+```
+
+The intro music rate is identical either way (28.71 key-ons/s), so the earlier "tempo
+too fast with the interrupt" symptom was the broken reload, not the interrupt. The timer
+interrupt is now on by default; boot hashes are unchanged (7258/EE92/64B0).

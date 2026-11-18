@@ -203,7 +203,7 @@ index 5b530a1..33a15ed 100644
      return 1;
  }
 diff --git a/runner/video/genesis_bus.c b/runner/video/genesis_bus.c
-index 2358402..11d115c 100644
+index 2358402..11e8cf5 100644
 --- a/runner/video/genesis_bus.c
 +++ b/runner/video/genesis_bus.c
 @@ -12,7 +12,8 @@ void gbus_68k_z80ram(unsigned off, uint8_t val);
@@ -228,7 +228,7 @@ index 2358402..11d115c 100644
  static uint64_t ym_abs_z80_stamp(void)
  {
      return (uint64_t)g_snd_frame * MASTER_CYCLES_PER_FRAME +
-@@ -131,30 +137,54 @@ static uint64_t ym_timer_a_period(const GenesisBus *b)
+@@ -131,30 +137,56 @@ static uint64_t ym_timer_a_period(const GenesisBus *b)
      return (uint64_t)(1024u - ta) * YM_TIMER_A_MASTER_TICK;
  }
  
@@ -241,7 +241,9 @@ index 2358402..11d115c 100644
 +{
 +    static int on = -1;
 +    if (on < 0) { const char *e = getenv("GENESIS_YM_TIMER_IRQ");
-+                  on = (e && *e && *e != '0'); }
++                  /* ON by default: the driver streams PCM from the timer-A
++                   * interrupt (see the reload rule below). */
++                  on = !(e && *e == '0'); }
 +    return on;
 +}
 +
@@ -297,12 +299,25 @@ index 2358402..11d115c 100644
  }
  
  static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
-@@ -171,6 +201,12 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
-     uint8_t reg = b->ym_addr[0];
+@@ -166,11 +198,22 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
+         b->ym_addr[bank] = val;
+         return;
+     }
+-    if (bank != 0) return;              /* timers live in register bank 0 */
+-
+-    uint8_t reg = b->ym_addr[0];
++    /* The OPN register file is shared by both ports: the part-1 latch addresses
++     * the same registers, so timer/DAC control written through port 1 must be
++     * honoured too (Shadowrun's driver programs the DAC/timer via $4002/$4003). */
++    uint8_t reg = b->ym_addr[bank];
      { static int yl = -1;
        if (yl < 0) { const char *e = getenv("GENESIS_YMREG_LOG"); yl = (e && *e && *e != '0'); }
 +      if (reg == 0x2Au) g_ym_dac_writes++;
-+      if (reg == 0x2Bu && (val & 0x80u)) g_ym_dac_writes |= 0x80000000ul; /* DAC enable seen (high bit set) */
++      if (reg == 0x2Bu) { extern unsigned long g_snd_frame;
++        static int dl = -1;
++        if (dl < 0) { const char *e = getenv("GENESIS_DAC_LOG"); dl = (e && *e && *e != '0'); }
++        if (dl) fprintf(stderr, "[DACEN] f=%lu val=%02X dac_bit=%d\n", g_snd_frame, val, (val>>7)&1);
++        if (val & 0x80u) g_ym_dac_writes |= 0x80000000ul; }
 +      if (reg == 0x28u) { extern unsigned long g_snd_frame;
 +        g_ym_writes++;
 +        if ((val & 0xF0u) == 0x00u || (val & 0x30u) == 0x30u) { g_ym_keyons++;
@@ -310,17 +325,21 @@ index 2358402..11d115c 100644
        if (yl && (reg == 0x26u || reg == 0x27u || reg == 0x24u || reg == 0x25u))
            fprintf(stderr, "[YMREG] f=%lu reg=%02X val=%02X\n", g_snd_frame, reg, val); }
      if (reg == 0x24u) {
-@@ -189,9 +225,14 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
+@@ -189,9 +232,18 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
          if (val & 0x20u) b->ym_status &= 0xfdu;
          b->ym_mode = val;
          if (val & 0x01u) {                  /* bit 0: load/run timer A */
 -            b->ym_timer_a_period = ym_timer_a_period(b);
-+            /* Loading starts a stopped timer. A flag acknowledgement that
-+             * leaves it loaded must preserve the running timer's phase. */
-+            if (!b->ym_timer_a_running) {
-+                b->ym_timer_a_period = ym_timer_a_period(b);
-+                g_ym_ta_period = (unsigned long)b->ym_timer_a_period;
-+                b->ym_timer_a_deadline = now + b->ym_timer_a_period;
++            /* Loading starts a stopped timer. A flag reset (bit 4) written with
++             * the load restarts a running timer so a newly programmed $24/$25
++             * period takes effect (Shadowrun re-arms timer A at 7.6 kHz when it
++             * starts PCM); a plain acknowledgement preserves the phase. */
++            uint64_t newp = ym_timer_a_period(b);
++            if (!b->ym_timer_a_running || (val & 0x10u) ||
++                newp != b->ym_timer_a_period) {
++                b->ym_timer_a_period = newp;
++                g_ym_ta_period = (unsigned long)newp;
++                b->ym_timer_a_deadline = now + newp;
 +            }
              b->ym_timer_a_running = 1;
 -            b->ym_timer_a_deadline = now + b->ym_timer_a_period;
