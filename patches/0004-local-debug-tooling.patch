@@ -203,21 +203,29 @@ index 5b530a1..33a15ed 100644
      return 1;
  }
 diff --git a/runner/video/genesis_bus.c b/runner/video/genesis_bus.c
-index 2358402..dc18127 100644
+index 2358402..e10b007 100644
 --- a/runner/video/genesis_bus.c
 +++ b/runner/video/genesis_bus.c
-@@ -12,7 +12,9 @@ void gbus_68k_z80ram(unsigned off, uint8_t val);
+@@ -12,7 +12,17 @@ void gbus_68k_z80ram(unsigned off, uint8_t val);
  #include <stdio.h>
  #include <stdlib.h>
  unsigned long g_vdp_data_writes = 0;
 -unsigned long g_ym_reads = 0, g_ym_tb_seen = 0;   /* 68K writes to the VDP data port */
 +unsigned long g_ym_reads = 0, g_ym_tb_seen = 0;
 +unsigned long g_ym_irq_count = 0, g_ym_ta_period = 0, g_ym_ta_fires = 0, g_ym_keyons = 0, g_ym_writes = 0, g_ym_dac_writes = 0;
-+int g_ym_pcm_active = 0;   /* set while the driver is streaming DAC samples */   /* 68K writes to the VDP data port */
++int g_ym_pcm_active = 0;
++unsigned g_ym_irq_div = 1;
++static int g_ym_irq_div_init = 0;
++static void ym_irq_div_init(void) {
++    if (g_ym_irq_div_init) return;
++    g_ym_irq_div_init = 1;
++    const char *e = getenv("GENESIS_YM_IRQ_DIV");
++    if (e && *e) { unsigned v = (unsigned)strtoul(e, NULL, 10); if (v >= 1 && v <= 16) g_ym_irq_div = v; }
++}
  static void z80cmd_log(uint16_t off, uint8_t val);
  static void z80rd_log(uint32_t a, uint8_t val);
  /* Log 68K READS of Z80 space (the driver handshake polls) for the sound hunt. */
-@@ -113,6 +115,11 @@ extern void glue_charge_68k_stall(uint32_t cycles);
+@@ -113,6 +123,11 @@ extern void glue_charge_68k_stall(uint32_t cycles);
  #define YM_TIMER_B_MASTER_TICK   (16ull * 144ull * 7ull)
  #define YM_TIMER_A_MASTER_TICK   (144ull * 7ull)
  
@@ -229,7 +237,7 @@ index 2358402..dc18127 100644
  static uint64_t ym_abs_z80_stamp(void)
  {
      return (uint64_t)g_snd_frame * MASTER_CYCLES_PER_FRAME +
-@@ -131,30 +138,57 @@ static uint64_t ym_timer_a_period(const GenesisBus *b)
+@@ -131,30 +146,62 @@ static uint64_t ym_timer_a_period(const GenesisBus *b)
      return (uint64_t)(1024u - ta) * YM_TIMER_A_MASTER_TICK;
  }
  
@@ -266,7 +274,12 @@ index 2358402..dc18127 100644
 +            b->ym_status |= 0x01u;      /* the flag sets on overflow regardless */
 +            g_ym_ta_fires++;
 +            if ((b->ym_mode & 0x04u) && ym_timer_irq_enabled() && g_ym_pcm_active) {
-+                g_ym_irq_count++; ym_raise_z80_irq(); }
++                static unsigned div_phase = 0;
++                ym_irq_div_init();
++                if (g_ym_irq_div <= 1 || ++div_phase >= g_ym_irq_div) {
++                    div_phase = 0;
++                    g_ym_irq_count++; ym_raise_z80_irq();
++                } }
 +            b->ym_timer_a_deadline += b->ym_timer_a_period;
 +        }
 +        if (guard >= 16u) {             /* fell far behind: snap to now */
@@ -301,7 +314,7 @@ index 2358402..dc18127 100644
  }
  
  static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
-@@ -166,11 +200,22 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
+@@ -166,11 +213,22 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
          b->ym_addr[bank] = val;
          return;
      }
@@ -327,7 +340,7 @@ index 2358402..dc18127 100644
        if (yl && (reg == 0x26u || reg == 0x27u || reg == 0x24u || reg == 0x25u))
            fprintf(stderr, "[YMREG] f=%lu reg=%02X val=%02X\n", g_snd_frame, reg, val); }
      if (reg == 0x24u) {
-@@ -189,9 +234,18 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
+@@ -189,9 +247,18 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
          if (val & 0x20u) b->ym_status &= 0xfdu;
          b->ym_mode = val;
          if (val & 0x01u) {                  /* bit 0: load/run timer A */
