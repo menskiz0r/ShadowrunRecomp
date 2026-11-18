@@ -2418,3 +2418,32 @@ cue - is therefore in how/when the driver starts that cue, not in the cue data i
 Next: log the driver's track-start state (`$0BBD` header fields and the sequencer position
 registers) right after the `FF 10 2F` command at f=2544 and compare against the cue's slow
 opening.
+
+### 2026-11-18: the ambush card plays different music content (DTW proof)
+
+Dynamic-time-warp comparison of the bass line (50-200 Hz pitch per 50 ms) between the port's
+card window and the reference:
+
+```
+our 49-53 s vs reference card   (74-78 s): DTW distance 2.34
+our 49-53 s vs reference battle (83-87 s): DTW distance 0.96
+```
+
+So the port's audio during the ambush card is the battle theme, while the longplay plays a
+different, slower cue at the same (visually identical) scene. This is different musical
+content, not the same cue at a different rate - a transient scan over 0.90-2.30x found no
+scale that aligns them.
+
+Track data path fully decoded:
+
+- command bytes `FF 10 nn`; dispatch `$0955` -> `$0A84` -> `$0BDF`;
+- pointer table base `$0AAB` = `$9609` (Z80), i.e. 68K `0x29609` with bank 5;
+- the table holds little-endian entries, i.e. `index 0x2E -> 0x0276`, `0x2F -> 0x0279`;
+- `$01F9`/`$023D` interpret an entry as **bank = high byte, offset = low byte**, so
+  `0x0279` -> ROM `0x10079`, whose data is the sequence
+  `22 67 00 00 06 60 00 00 1C 08 39 00 0C 00 FF DD ...`;
+- the driver builds a playlist in `$0BBD` (`01 02 79 01 0C 79 01 1D 79 ...`).
+
+What remains: the port's playlist/cue at that scene must be compared against hardware's. The
+video gives the sound but not the driver state, so the final step needs a RAM dump from any
+emulator at the ambush. Everything up to that point is established above.
