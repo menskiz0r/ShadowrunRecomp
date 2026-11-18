@@ -719,7 +719,7 @@ index 5b530a1..33a15ed 100644
      return 1;
  }
 diff --git a/runner/video/genesis_bus.c b/runner/video/genesis_bus.c
-index d0e1647..70bb759 100644
+index d0e1647..2062340 100644
 --- a/runner/video/genesis_bus.c
 +++ b/runner/video/genesis_bus.c
 @@ -7,6 +7,34 @@
@@ -770,7 +770,7 @@ index d0e1647..70bb759 100644
  
  static uint64_t ym_abs_z80_stamp(void)
  {
-@@ -106,20 +140,76 @@ static uint64_t ym_abs_68k_stamp(void)
+@@ -106,20 +140,83 @@ static uint64_t ym_abs_68k_stamp(void)
             (uint64_t)STAMP_68K();
  }
  
@@ -785,6 +785,13 @@ index d0e1647..70bb759 100644
 +                     scale = (e && *e) ? atoi(e) : 100;
 +                     if (scale < 50 || scale > 400) scale = 100; }
 +    if (scale != 100 && p < 20000u) p = p * (uint64_t)scale / 100u;
++    /* Diagnostic: the drum pattern runs at 7056 where the reference implies the
++     * driver's other rate (10080). Remap only that value so the voice samples
++     * keep their own programmed rates. */
++    { static int drum_fix = -1;
++      if (drum_fix < 0) { const char *e = getenv("GENESIS_YM_DRUM_FIX");
++                          drum_fix = (e && *e && *e != '0'); }
++      if (drum_fix && p == 7056u) p = 10080u; }
 +    return p;
 +}
 +
@@ -854,7 +861,7 @@ index d0e1647..70bb759 100644
  }
  
  static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
-@@ -131,10 +221,29 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
+@@ -131,10 +228,29 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
          b->ym_addr[bank] = val;
          return;
      }
@@ -888,7 +895,7 @@ index d0e1647..70bb759 100644
          b->ym_timer_b = val;
          b->ym_timer_b_period =
              (uint64_t)(256u - (unsigned)val) * YM_TIMER_B_MASTER_TICK;
-@@ -145,6 +254,22 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
+@@ -145,6 +261,29 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
          if (val & 0x10u) b->ym_status &= 0xfeu;
          if (val & 0x20u) b->ym_status &= 0xfdu;
          b->ym_mode = val;
@@ -898,6 +905,13 @@ index d0e1647..70bb759 100644
 +             * period takes effect (Shadowrun re-arms timer A at 7.6 kHz when it
 +             * starts PCM); a plain acknowledgement preserves the phase. */
 +            uint64_t newp = ym_timer_a_period(b);
++            { static int tl = -1;
++              if (tl < 0) { const char *e = getenv("GENESIS_YMTA_LOG"); tl = (e && *e && *e != '0'); }
++              if (tl) { extern unsigned long g_snd_frame;
++                        fprintf(stderr, "[YMTA] f=%lu hi=%02X lo=%02X newp=%lu cur=%lu run=%d bit4=%d\n",
++                                g_snd_frame, b->ym_timer_a_hi, b->ym_timer_a_lo,
++                                (unsigned long)newp, (unsigned long)b->ym_timer_a_period,
++                                (int)b->ym_timer_a_running, (val & 0x10u) ? 1 : 0); } }
 +            if (!b->ym_timer_a_running || (val & 0x10u) ||
 +                newp != b->ym_timer_a_period) {
 +                b->ym_timer_a_period = newp;
@@ -911,7 +925,7 @@ index d0e1647..70bb759 100644
          if (val & 0x02u) {
              /* Loading starts a stopped timer. A flag acknowledgement that
               * leaves it loaded must preserve the running timer's phase. */
-@@ -358,6 +483,7 @@ uint16_t gbus_read16(GenesisBus *b, uint32_t a)
+@@ -358,6 +497,7 @@ uint16_t gbus_read16(GenesisBus *b, uint32_t a)
               * driver decompression's back-reference copy (MOVE.B (A4,D4.W),
               * (A5)+) — the S2 silent-audio bug. */
              unsigned off = a & 0x1FFFu;
@@ -919,7 +933,7 @@ index d0e1647..70bb759 100644
              return (uint16_t)(((uint16_t)b->z80_ram[off] << 8)
                                | b->z80_ram[(off + 1u) & 0x1FFFu]);
          }
-@@ -419,15 +545,50 @@ uint8_t gbus_peek8(const GenesisBus *b, uint32_t a)
+@@ -419,15 +559,50 @@ uint8_t gbus_peek8(const GenesisBus *b, uint32_t a)
  {
      a &= 0xFFFFFFu;
      if (a >= 0xA00000u && a < 0xA10000u && (a & 0xFFFFu) < 0x2000u)
@@ -971,7 +985,7 @@ index d0e1647..70bb759 100644
      a &= 0xFFFFFFu;
      if (a >= 0xFF0000u) {                                            /* RAM     */
          uint16_t o = (uint16_t)(a & 0xFFFFu);
-@@ -460,7 +621,7 @@ void gbus_write16(GenesisBus *b, uint32_t a, uint16_t v)
+@@ -460,7 +635,7 @@ void gbus_write16(GenesisBus *b, uint32_t a, uint16_t v)
          if ((a & 0xFFFFu) < 0x2000u) { unsigned off = a & 0x1FFFu;
              snd_trace_68k_write((uint16_t)off, b->z80_ram[off], (uint8_t)(v >> 8),
                                  b->z80_busreq, b->z80_reset_off);  /* [SND-TRACE] */
@@ -980,7 +994,7 @@ index d0e1647..70bb759 100644
          if (a >= 0xA04000u && a <= 0xA04003u) {
              uint8_t port = (uint8_t)(a & 3);
              ym_write_side_effect(b, port, (uint8_t)v, ym_abs_68k_stamp());
-@@ -503,6 +664,8 @@ uint8_t gbus_read8(GenesisBus *b, uint32_t a)
+@@ -503,6 +678,8 @@ uint8_t gbus_read8(GenesisBus *b, uint32_t a)
  
  void gbus_write8(GenesisBus *b, uint32_t a, uint8_t v)
  {
@@ -989,7 +1003,7 @@ index d0e1647..70bb759 100644
      a &= 0xFFFFFFu;
      uint8_t *extra_ram = expansion_ram_at(a, 1);
      if (extra_ram) { *extra_ram = v; return; }
-@@ -512,7 +675,7 @@ void gbus_write8(GenesisBus *b, uint32_t a, uint8_t v)
+@@ -512,7 +689,7 @@ void gbus_write8(GenesisBus *b, uint32_t a, uint8_t v)
          if ((a & 0xFFFFu) < 0x2000u) { unsigned off = a & 0x1FFFu;
              snd_trace_68k_write((uint16_t)off, b->z80_ram[off], v,
                                  b->z80_busreq, b->z80_reset_off);  /* [SND-TRACE] */
@@ -998,7 +1012,7 @@ index d0e1647..70bb759 100644
          if (a >= 0xA04000u && a <= 0xA04003u) {
              uint8_t port = (uint8_t)(a & 3);
              ym_write_side_effect(b, port, v, ym_abs_68k_stamp());
-@@ -534,6 +697,8 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
+@@ -534,6 +711,8 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
      /* YM2612 status: BUSY is clear; timer flags advance on scheduler time. */
      if (addr < 0x6000u) {
          ym_timer_update(b, ym_abs_z80_stamp());
@@ -1007,7 +1021,7 @@ index d0e1647..70bb759 100644
          return b->ym_status;
      }
      if (addr < 0x8000u) return 0xFFu;                               /* bank/PSG   */
-@@ -542,10 +707,51 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
+@@ -542,10 +721,51 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
      return gbus_read8(b, a68);
  }
  

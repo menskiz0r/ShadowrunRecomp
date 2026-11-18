@@ -1798,3 +1798,36 @@ on the cost of the per-iteration calls (`$02B7`, `$0302`, `$0066`, `$0041`).
 
 Next: pin down what sets `$0040` and what `$0066` does, and compare the loop's
 iterations/second with the hardware expectation.
+
+### 2026-11-18: reference capture decoded; drum comparison needs a fight capture
+
+Wrote `build/mfdec.c` (Media Foundation source reader) to decode the reference longplay
+because the shell has no ffmpeg and no network. It reads the MP4 through
+`MFCreateSourceReaderFromByteStream` (the URL form returns E_ACCESSDENIED here) and writes
+interleaved PCM; `ref_0_130.pcm` and `ref_60_105.pcm` are the decoded 0-130 s and 60-105 s
+windows at 44.1 kHz stereo.
+
+Reference drum pattern (video 1:09-1:22): 452 ms and 454 ms in two independent windows
+(2.21 Hz). Envelope alignment of the whole intro puts the port 24.5 s ahead of the
+reference (the player's START press comes earlier in our scripted run).
+
+However the headless scripts cannot reach the fight: without input the game parks on the
+ambush card, and our capture is silent after ~75 s while the reference continues into the
+drum-heavy battle. Correlation against the reference is consequently near zero through
+that section. The player's own session (`sessions/20261118-071737`) captured only 48 s of
+audio and also stops at the card.
+
+So the remaining drum-tempo question cannot be settled from the current captures. What is
+established:
+
+- the driver's timer-A schedule during the scene: 7056 cycles (7610 Hz) at f=2749-3116,
+  10080 (5327 Hz) at f=3117-3186, back to 7056 at f=3187-3366, then 6048 (8878 Hz)
+- a global 1.43x scale of PCM timer periods makes the drum rhythm match the reference
+  tempo (7610/5327 = 1.43) but audibly slows the death voices, so drums and voices do not
+  share one rate
+- a drum-only 7056->10080 remap leaves the drums unchanged and slows the voices, which
+  places the voices on 7056 (not the drums)
+
+Next: capture our own fight audio (scripted input that actually enters the fight, or a
+recorded session that plays through it) and compare against
+`ref_0_130.pcm` at the 24.5 s offset.
