@@ -2117,3 +2117,35 @@ voice interprets `$1204`/its flags byte, not from the timer or DAC.
 
 Next: dump `$14D6-$15D0` (the voice branch) and `(IX+$00)`/`(IX+$01)` for the drum voice
 (`IX=$18D5`) vs the melody voices, then compare the `$1204` handling.
+
+### 2026-11-18: exhaustive timing matrix - the drum rate is invariant
+
+System-level WASAPI captures (real device) with every relevant knob:
+
+| variant | drum period | music |
+|---|---|---|
+| baseline (current build) | 182 / 244 ms | correct |
+| PCM timer x1.43 (`YM_TA_SCALE=143`) | unchanged | changed |
+| PCM timer x2 for the drum stream (`YM_DRUM_HALF`) | unchanged | - |
+| timer IRQs off (`YM_TIMER_IRQ=0`) | unchanged | - |
+| Z80 VBlank /2 (`Z80_VINT_DIV=2`) | unchanged | - |
+| both tick sources reduced (30 ticks/s) | unchanged | - |
+| Z80 speed /2 (`Z80_SPEED_PCT=50`) | unchanged | - |
+| YM BUSY modelled (`GENESIS_YM_BUSY=230`) | unchanged | - |
+| DAC muted / PSG muted / channel-6 key-ons muted | unchanged | - |
+| RNG seeds 1234, ABCD | 242 / 244 ms | same |
+| **Tier-3 interpreter (`GENESIS_FORCE_INTERP=1`)** | **182 / 244 ms** | same |
+
+Measured invariants: 68K ~9953 instructions/frame (12.8 cycles each = the 127856-cycle
+budget), Z80 ~6400 instructions/frame at 228 cycles/line. Key-ons on FM channels 1 and 6
+every 14 frames (234 ms), melody on channels 0/2/4.
+
+Since the recompiled 68K and the independent Tier-3 interpreter produce identical drum
+timing, the note schedule is what this ROM's own code produces at 60 Hz. The reference
+longplay measures 452-488 ms for the same passage; its bass pitches match ours exactly
+(66/98/130/164 Hz), so it is the same music, but the percussion figure differs by ~1.85x.
+
+The remaining possibilities are outside our emulation's timing: a different percussion
+patch/rendering in the FM path, or the longplay's capture/encoding differing from standard
+NTSC 60 Hz. Resolving it needs an independent reference of known provenance (a second
+emulator's audio on the same ROM) rather than the edited longplay.
