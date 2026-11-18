@@ -2149,3 +2149,31 @@ The remaining possibilities are outside our emulation's timing: a different perc
 patch/rendering in the FM path, or the longplay's capture/encoding differing from standard
 NTSC 60 Hz. Resolving it needs an independent reference of known provenance (a second
 emulator's audio on the same ROM) rather than the edited longplay.
+
+### 2026-11-18: the drums are at the right rate - the theme starts at the wrong position
+
+Longer capture (5000 frames, no extra input) shows the drums running at 244 ms from 49 s to
+70 s, not stopping. The reference's drum-heavy section (83-97 s) is also 244 ms. So the
+battle drum rate matches the reference exactly.
+
+Content comparison at the same musical material (bass 66/98/130/164 Hz):
+
+```
+our 44.5-47.5 s (card)    263/789/1314 Hz, no 66 Hz bass, quiet -> different passage
+ref 69-80 s               bass 66/99/131/164, drums 452 ms      -> slow statement
+our 48-70 s               bass 66/98/130/164, drums 244 ms      -> fast statement
+ref 83-97 s               drums 244 ms                          -> fast statement
+```
+
+So the reference plays the battle theme's slow opening (452 ms) and reaches the fast section
+later, while our port starts directly in the fast section. That single fault explains both
+reported symptoms: the drums "sound too fast" (the slow statement never plays) and the drum
+track "ends before the scene ends" (we started partway through).
+
+This also explains why every timing knob left the drum period unchanged: the period is
+correct - it is the *starting position / section* of the theme that differs, which is
+sequenced by the 68K->Z80 command stream at track start, not by timers.
+
+Next: trace the track-start command (the $1204/$1205 pair and the driver's pattern pointer
+at track start) and compare the pattern position the driver begins from against the slow
+statement.
