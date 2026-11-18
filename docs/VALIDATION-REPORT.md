@@ -2273,3 +2273,30 @@ at 32767 and flattens the envelope).
 So the percussion rhythm, the kick/snare spacing and the harmony all match the reference.
 Fine-grained envelope correlation stays low (0.22) because the longplay is normalised and
 clipped while the port's mix is not; that is a level difference, not a timing one.
+
+### 2026-11-18: the drum schedule is frame-locked; the 452 ms cue is the story text
+
+Controlled experiments on the key-on schedule (YKEY trace, frames between FM key-ons):
+
+```
+Z80 speed 50% / 100% / 200%   -> identical key-on frames (300,301,303,304,305,306,307,...)
+68K speed 50%                 -> same gaps, only the scene start shifts later
+timer IRQs off                -> unchanged
+PCM timer x1.43 / x2          -> unchanged
+```
+
+So the drum rhythm is produced by the ROM's frame-based logic and cannot be altered by
+emulation speed. It is therefore correct by construction for this ROM (USA/NTSC, header
+"SEGA GENESIS" / region "U").
+
+Mute fixes: `GENESIS_MUTE_DAC`, `_CH1`, `_CH6` previously returned from the side-effect
+handler while the caller still pushed the audio event, so those experiments were invalid.
+Mutes now gate the event push: DAC-muted changes the mix by nothing (rms 1799 vs 1810), so
+the drums are FM; muting ch1 or ch6 removes the snare layer (127 hits -> 18/25) while the
+kick and hats remain, i.e. percussion is layered across those channels as expected.
+
+The longplay's 452 ms cue (1:09-1:22) is the story-text passage; its battle music from 1:22
+runs at 244 ms, which is exactly the port's battle drum period (aligned at a constant
+offset, r = 0.91-0.96 across 48-72 s). The port's text pages auto-advance quickly, so that
+slower cue is only heard briefly before the battle theme starts - which is why the drums
+appear to begin "too early" compared with a longplay where the player lingers on the text.

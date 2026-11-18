@@ -745,7 +745,7 @@ index 5b530a1..33a15ed 100644
      return 1;
  }
 diff --git a/runner/video/genesis_bus.c b/runner/video/genesis_bus.c
-index d0e1647..94e8055 100644
+index d0e1647..234df89 100644
 --- a/runner/video/genesis_bus.c
 +++ b/runner/video/genesis_bus.c
 @@ -7,6 +7,36 @@
@@ -895,7 +895,7 @@ index d0e1647..94e8055 100644
  }
  
  static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
-@@ -131,10 +236,58 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
+@@ -131,10 +236,60 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
          b->ym_addr[bank] = val;
          return;
      }
@@ -945,9 +945,11 @@ index d0e1647..94e8055 100644
 +        if (dl) fprintf(stderr, "[DACEN] f=%lu val=%02X dac_bit=%d\n", g_snd_frame, val, (val>>7)&1);
 +        if (val & 0x80u) g_ym_dac_writes |= 0x80000000ul; }
 +      if (reg == 0x28u) { extern unsigned long g_snd_frame;
++        static int ykey = -1;
++        if (ykey < 0) { const char *e = getenv("GENESIS_YKEY_LOG"); ykey = (e && *e && *e != '0'); }
 +        g_ym_writes++;
 +        if ((val & 0xF0u) == 0x00u || (val & 0x30u) == 0x30u) { g_ym_keyons++;
-+          fprintf(stderr, "[YKEY] f=%lu val=%02X\n", g_snd_frame, val); } }
++          if (ykey) fprintf(stderr, "[YKEY] f=%lu val=%02X\n", g_snd_frame, val); } }
 +      if (yl && (reg == 0x26u || reg == 0x27u || reg == 0x24u || reg == 0x25u))
 +          fprintf(stderr, "[YMREG] f=%lu reg=%02X val=%02X\n", g_snd_frame, reg, val); }
 +    if (reg == 0x24u) {
@@ -958,7 +960,7 @@ index d0e1647..94e8055 100644
          b->ym_timer_b = val;
          b->ym_timer_b_period =
              (uint64_t)(256u - (unsigned)val) * YM_TIMER_B_MASTER_TICK;
-@@ -145,6 +298,29 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
+@@ -145,6 +300,29 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
          if (val & 0x10u) b->ym_status &= 0xfeu;
          if (val & 0x20u) b->ym_status &= 0xfdu;
          b->ym_mode = val;
@@ -988,7 +990,7 @@ index d0e1647..94e8055 100644
          if (val & 0x02u) {
              /* Loading starts a stopped timer. A flag acknowledgement that
               * leaves it loaded must preserve the running timer's phase. */
-@@ -358,6 +534,7 @@ uint16_t gbus_read16(GenesisBus *b, uint32_t a)
+@@ -358,6 +536,7 @@ uint16_t gbus_read16(GenesisBus *b, uint32_t a)
               * driver decompression's back-reference copy (MOVE.B (A4,D4.W),
               * (A5)+) — the S2 silent-audio bug. */
              unsigned off = a & 0x1FFFu;
@@ -996,7 +998,7 @@ index d0e1647..94e8055 100644
              return (uint16_t)(((uint16_t)b->z80_ram[off] << 8)
                                | b->z80_ram[(off + 1u) & 0x1FFFu]);
          }
-@@ -419,15 +596,50 @@ uint8_t gbus_peek8(const GenesisBus *b, uint32_t a)
+@@ -419,15 +598,50 @@ uint8_t gbus_peek8(const GenesisBus *b, uint32_t a)
  {
      a &= 0xFFFFFFu;
      if (a >= 0xA00000u && a < 0xA10000u && (a & 0xFFFFu) < 0x2000u)
@@ -1048,7 +1050,7 @@ index d0e1647..94e8055 100644
      a &= 0xFFFFFFu;
      if (a >= 0xFF0000u) {                                            /* RAM     */
          uint16_t o = (uint16_t)(a & 0xFFFFu);
-@@ -460,7 +672,7 @@ void gbus_write16(GenesisBus *b, uint32_t a, uint16_t v)
+@@ -460,7 +674,7 @@ void gbus_write16(GenesisBus *b, uint32_t a, uint16_t v)
          if ((a & 0xFFFFu) < 0x2000u) { unsigned off = a & 0x1FFFu;
              snd_trace_68k_write((uint16_t)off, b->z80_ram[off], (uint8_t)(v >> 8),
                                  b->z80_busreq, b->z80_reset_off);  /* [SND-TRACE] */
@@ -1057,7 +1059,7 @@ index d0e1647..94e8055 100644
          if (a >= 0xA04000u && a <= 0xA04003u) {
              uint8_t port = (uint8_t)(a & 3);
              ym_write_side_effect(b, port, (uint8_t)v, ym_abs_68k_stamp());
-@@ -503,6 +715,8 @@ uint8_t gbus_read8(GenesisBus *b, uint32_t a)
+@@ -503,6 +717,8 @@ uint8_t gbus_read8(GenesisBus *b, uint32_t a)
  
  void gbus_write8(GenesisBus *b, uint32_t a, uint8_t v)
  {
@@ -1066,7 +1068,7 @@ index d0e1647..94e8055 100644
      a &= 0xFFFFFFu;
      uint8_t *extra_ram = expansion_ram_at(a, 1);
      if (extra_ram) { *extra_ram = v; return; }
-@@ -512,7 +726,7 @@ void gbus_write8(GenesisBus *b, uint32_t a, uint8_t v)
+@@ -512,7 +728,7 @@ void gbus_write8(GenesisBus *b, uint32_t a, uint8_t v)
          if ((a & 0xFFFFu) < 0x2000u) { unsigned off = a & 0x1FFFu;
              snd_trace_68k_write((uint16_t)off, b->z80_ram[off], v,
                                  b->z80_busreq, b->z80_reset_off);  /* [SND-TRACE] */
@@ -1075,7 +1077,7 @@ index d0e1647..94e8055 100644
          if (a >= 0xA04000u && a <= 0xA04003u) {
              uint8_t port = (uint8_t)(a & 3);
              ym_write_side_effect(b, port, v, ym_abs_68k_stamp());
-@@ -534,7 +748,12 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
+@@ -534,7 +750,12 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
      /* YM2612 status: BUSY is clear; timer flags advance on scheduler time. */
      if (addr < 0x6000u) {
          ym_timer_update(b, ym_abs_z80_stamp());
@@ -1089,7 +1091,7 @@ index d0e1647..94e8055 100644
      }
      if (addr < 0x8000u) return 0xFFu;                               /* bank/PSG   */
      /* $8000-$FFFF: banked window into the 68K bus. */
-@@ -542,10 +761,51 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
+@@ -542,15 +763,70 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
      return gbus_read8(b, a68);
  }
  
@@ -1141,7 +1143,26 @@ index d0e1647..94e8055 100644
          b->z80_ram[off] = val; return; }                           /* RAM+mirror */
      if (addr < 0x6000u) {
          uint8_t port = (uint8_t)(addr & 3);
-@@ -562,6 +822,7 @@ void gbus_z80_write(GenesisBus *b, uint16_t addr, uint8_t val)
+         ym_write_side_effect(b, port, val, ym_abs_z80_stamp());
+         CHIP_PC_Z80();
++        /* Mutes must gate the EVENT push, not the side-effect handler: the
++         * caller pushes regardless, so silencing only the side effect left the
++         * audio unchanged and made earlier mute experiments meaningless. */
++        { static int mute_dac = -1, mute1 = -1, mute6 = -1;
++          if (mute_dac < 0) { const char *e = getenv("GENESIS_MUTE_DAC");
++                              mute_dac = (e && *e && *e != '0');
++                              e = getenv("GENESIS_MUTE_CH1"); mute1 = (e && *e && *e != '0');
++                              e = getenv("GENESIS_MUTE_CH6"); mute6 = (e && *e && *e != '0'); }
++          uint8_t reg = b->ym_addr[port >> 1];
++          if ((port & 1u) && mute_dac && (reg == 0x2Au || reg == 0x2Bu)) return;
++          if ((port & 1u) && (mute1 || mute6) && reg == 0x28u) {
++              uint8_t ch = val & 7u;
++              if ((mute1 && ch == 1u) || (mute6 && ch == 6u)) return;
++          } }
+         if (port & 1u)
+             audio_event_push_latched(machine_z80_stamp(), port,
+                                      b->ym_addr[port >> 1], val);
+@@ -562,6 +838,7 @@ void gbus_z80_write(GenesisBus *b, uint16_t addr, uint8_t val)
          b->z80_bank = ((b->z80_bank >> 1) | ((val & 1) << 8)) & 0x1FF;
          return;
      }
@@ -1172,7 +1193,7 @@ index 242774c..bb12a64 100644
 +void gbus_ym_timer_service(GenesisBus *b, uint64_t now);
  #endif /* GENESIS_BUS_H */
 diff --git a/runner/video/genesis_machine.c b/runner/video/genesis_machine.c
-index bfbe22d..4f5bdf8 100644
+index bfbe22d..6672b64 100644
 --- a/runner/video/genesis_machine.c
 +++ b/runner/video/genesis_machine.c
 @@ -14,7 +14,9 @@
@@ -1391,12 +1412,18 @@ index bfbe22d..4f5bdf8 100644
      for (int line = 0; line < LINES_TOTAL; line++) {
          unsigned irq = gvdp_begin_scanline(&m->vdp, line);
          g_snd_line = (unsigned)line;   /* [SND-TRACE] */
-@@ -536,17 +682,29 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+@@ -536,17 +682,34 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
          s_z80_off   = 0;   /* 68K writes during the chunk below land at the line start */
  
          /* Advance the recompiled 68K ~one scanline (it parks at WaitForVBlank). */
+-        glue_run_game_chunk(M68K_PER_LINE);
 +        double _t0 = phase_log ? genesis_now_us() : 0;
-         glue_run_game_chunk(M68K_PER_LINE);
++        { static int pct = -1;
++      if (pct < 0) { const char *e = getenv("GENESIS_68K_SPEED_PCT");
++                     pct = (e && *e) ? atoi(e) : 100;
++                     if (pct < 10 || pct > 400) pct = 100; }
++      glue_run_game_chunk(pct == 100 ? M68K_PER_LINE
++                                     : (uint32_t)(M68K_PER_LINE * (uint32_t)pct / 100u)); }
 +        double _t1 = phase_log ? genesis_now_us() : 0;
 +        phase_68k += _t1 - _t0;
  
@@ -1422,7 +1449,7 @@ index bfbe22d..4f5bdf8 100644
  
          /* Deliver interrupts to the 68K (and the Z80 at vblank). */
          if (irq & GVDP_IRQ_VBLANK) {
-@@ -571,11 +729,18 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+@@ -571,11 +734,18 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
  #endif
              }
  #endif
@@ -1443,7 +1470,7 @@ index bfbe22d..4f5bdf8 100644
              glue_own_interrupt(6, &m->vdp);
          }
  
-@@ -590,6 +755,7 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+@@ -590,6 +760,7 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
           * when no output is requested (found by the determinism probe,
           * 2026-09-25: replays without rendering forked in the vdp partition
           * in 1-2 of 691 dense probe passes per game). */
@@ -1451,7 +1478,7 @@ index bfbe22d..4f5bdf8 100644
          if (line < active_h) {
              int dbl = gvdp_interlace_double(&m->vdp);
              for (int sub = 0; sub <= dbl; sub++) {
-@@ -635,11 +801,30 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+@@ -635,11 +806,30 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
          if (irq & GVDP_IRQ_HBLANK) glue_own_interrupt(4, &m->vdp);
  
          m->master_cycle += MASTER_PER_LINE;
