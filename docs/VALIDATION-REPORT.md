@@ -1731,3 +1731,28 @@ after              9.83/s       1474/s         1587/s
 
 So the music clock is back to its polling rate while the DAC stream runs at ~5 kHz.
 Boot hashes unchanged (7258/EE92/64B0).
+
+### 2026-11-18: PCM restored; drum pattern still runs fast (poll-driven)
+
+Status after the PCM fixes: all sounds play (player-confirmed), regular music tempo is
+correct, but the drum pattern in the ambush runs too fast (rhythm, not pitch).
+
+Tested whether the pattern clock is the timer interrupt: halving the delivered interrupts
+(GENESIS_YM_IRQ_DIV=2) changed nothing - IRQs 5537 -> 2768/s, DAC bytes unchanged at
+5196/s, drum tempo unchanged. So the driver advances its pattern from **polling the YM
+status**, not from the interrupt.
+
+The likely mechanism: our timer A status bit stays set for the whole period and is only
+cleared when the driver writes `$27` (observed about once per frame). A driver that polls
+the bit in a tight loop therefore sees "tick" on many consecutive polls instead of once
+per period, so its pattern counter advances far too often.
+
+Earlier evidence fits: the Z80 performs millions of status reads per run, and the
+timer-B flag was never observed set at a read, i.e. everything is polled.
+
+Next step (definitive): disassemble the uploaded Z80 driver to see what the pattern counter
+is driven by. The driver lives in Z80 RAM (not ROM); a mid-run dump is saved at
+`build/z80_driver_1700.bin`, entry `$08C3`, IRQ vector `$0038` (a 6-byte
+`LD ($003E),SP; RETI` that the main loop uses as a tick). A Z80 disassembler is not
+available in this environment (capstone build lacks Z80), so that is the first thing to
+provision.
