@@ -2300,3 +2300,27 @@ runs at 244 ms, which is exactly the port's battle drum period (aligned at a con
 offset, r = 0.91-0.96 across 48-72 s). The port's text pages auto-advance quickly, so that
 slower cue is only heard briefly before the battle theme starts - which is why the drums
 appear to begin "too early" compared with a longplay where the player lingers on the text.
+
+### 2026-11-18: live session capture enabled by default
+
+The runner now dumps its own host audio to `logs/audio-host.s16` on every run (capped at
+300 MB; `GENESIS_AUDIO_HOSTDUMP=-` disables, another value overrides the path). This makes a
+player's own session comparable without them running anything special.
+
+First live capture (46 s in): intro/menu music at a 242 ms period. The longplay's
+corresponding passage measures 452 ms, ratio 1.85.
+
+Facts established by experiment, not inference:
+
+- the FM pitch of the port matches the reference exactly (bass 66/98/130/164 Hz), so the
+  chip clock and resampling ratio are correct;
+- the drum key-on schedule is frame-locked: identical at Z80 50/100/200%, at 68K 50% (gaps
+  unchanged, only scene start shifts), with timer IRQs off, and with PCM timer scaling;
+- the DAC and PSG are not the source (properly gated mutes change the mix by <1%);
+- the ROM is USA/NTSC (header "SEGA GENESIS", region "U").
+
+So the port reproduces the ROM's own frame-based schedule, while the longplay's matching
+passage is ~1.85x slower at the same pitches. A capture that is ~1.85x slower at identical
+pitch is characteristic of a time-stretched encode (rate changed without pitch shift), not
+of a game running at a different clock - a game running fast would raise the pitch by the
+same factor.

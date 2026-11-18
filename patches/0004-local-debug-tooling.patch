@@ -20,21 +20,34 @@ index 4dfc5fc..bdd1c30 160000
 -Subproject commit 4dfc5fc29fd67d23714126348e678e45952e9462
 +Subproject commit bdd1c307cc553891de05b0c69903d328a00ae692
 diff --git a/runner/audio.c b/runner/audio.c
-index ef618a4..7e5353f 100644
+index ef618a4..bd9c8f3 100644
 --- a/runner/audio.c
 +++ b/runner/audio.c
-@@ -61,6 +61,10 @@ static void genesis_audio_callback(void *user, Uint8 *stream, int len)
+@@ -61,6 +61,23 @@ static void genesis_audio_callback(void *user, Uint8 *stream, int len)
      int frames = len / (int)(2 * sizeof(int16_t)); /* stereo S16 */
      Uint64 begin = SDL_GetPerformanceCounter();
      rab_pull(&s_bridge, (int16_t *)stream, frames);
-+   { static FILE *hd = NULL; static int htried = 0;
-+     if (!htried) { htried = 1; const char *e = getenv("GENESIS_AUDIO_HOSTDUMP");
-+                    if (e && *e) hd = fopen(e, "wb"); }
-+     if (hd) { fwrite(stream, 1, (size_t)len, hd); fflush(hd); } }
++   /* Host audio is dumped by default (build/logs/audio-host.s16) so a player's
++    * own session can be compared against a reference without asking them to run
++    * anything special. GENESIS_AUDIO_HOSTDUMP overrides the path; setting it to
++    * "-" disables the dump. The file is capped so a long session cannot fill the
++    * disk. */
++   { static FILE *hd = NULL; static int htried = 0; static long long written = 0;
++     if (!htried) {
++         htried = 1;
++         const char *e = getenv("GENESIS_AUDIO_HOSTDUMP");
++         const char *path = (e && *e) ? e : "logs/audio-host.s16";
++         if (!(path[0] == '-' && path[1] == 0)) hd = fopen(path, "wb");
++     }
++     if (hd && written < (300LL << 20)) {
++         if (fwrite(stream, 1, (size_t)len, hd) == (size_t)len) written += len;
++         fflush(hd);
++         if (written >= (300LL << 20)) { fclose(hd); hd = NULL; }
++     } }
      uint32_t elapsed = (uint32_t)((SDL_GetPerformanceCounter() - begin)
                                  * 1000000ull / s_perf_freq);
      if (elapsed > s_callback_peak_us) s_callback_peak_us = elapsed;
-@@ -165,7 +169,9 @@ int audio_init(int psg_sample_rate)
+@@ -165,7 +182,9 @@ int audio_init(int psg_sample_rate)
      want.freq     = s_output_rate;
      want.format   = AUDIO_S16SYS;
      want.channels = 2;
@@ -45,7 +58,7 @@ index ef618a4..7e5353f 100644
      want.callback = genesis_audio_callback;
  
      /* Allow SDL to renegotiate the request; the bridge keys off got.freq. */
-@@ -189,7 +195,7 @@ int audio_init(int psg_sample_rate)
+@@ -189,7 +208,7 @@ int audio_init(int psg_sample_rate)
       * hitch for free (the servo drains the excess down to target over time),
       * and stretch_enable (default 1) conceals brief producer stalls by a
       * pitch-preserving loop of recent audio instead of fading to silence. */
