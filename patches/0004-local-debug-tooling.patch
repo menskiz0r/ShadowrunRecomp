@@ -20,7 +20,7 @@ index 4dfc5fc..bdd1c30 160000
 -Subproject commit 4dfc5fc29fd67d23714126348e678e45952e9462
 +Subproject commit bdd1c307cc553891de05b0c69903d328a00ae692
 diff --git a/runner/audio.c b/runner/audio.c
-index 9dab768..7e5353f 100644
+index ef618a4..7e5353f 100644
 --- a/runner/audio.c
 +++ b/runner/audio.c
 @@ -61,6 +61,10 @@ static void genesis_audio_callback(void *user, Uint8 *stream, int len)
@@ -34,16 +34,18 @@ index 9dab768..7e5353f 100644
      uint32_t elapsed = (uint32_t)((SDL_GetPerformanceCounter() - begin)
                                  * 1000000ull / s_perf_freq);
      if (elapsed > s_callback_peak_us) s_callback_peak_us = elapsed;
-@@ -165,7 +169,7 @@ int audio_init(int psg_sample_rate)
+@@ -165,7 +169,9 @@ int audio_init(int psg_sample_rate)
      want.freq     = s_output_rate;
      want.format   = AUDIO_S16SYS;
      want.channels = 2;
 -    want.samples  = 1024;
 +    want.samples  = 2048;   /* more slack against frame jitter (was 1024) */
-     { const char *ds = getenv("GENESIS_AUDIO_SAMPLES");
-       if (ds && *ds) { int v = atoi(ds); if (v >= 256 && v <= 16384) want.samples = (Uint16)v; } }
++    { const char *ds = getenv("GENESIS_AUDIO_SAMPLES");
++      if (ds && *ds) { int v = atoi(ds); if (v >= 256 && v <= 16384) want.samples = (Uint16)v; } }
      want.callback = genesis_audio_callback;
-@@ -191,7 +195,7 @@ int audio_init(int psg_sample_rate)
+ 
+     /* Allow SDL to renegotiate the request; the bridge keys off got.freq. */
+@@ -189,7 +195,7 @@ int audio_init(int psg_sample_rate)
       * hitch for free (the servo drains the excess down to target over time),
       * and stretch_enable (default 1) conceals brief producer stalls by a
       * pitch-preserving loop of recent audio instead of fading to silence. */
@@ -84,11 +86,236 @@ index e965071..499dd54 100644
      audio_event_push(cycle_stamp, (uint8_t)(data_port - 1u), reg);
      audio_event_push(cycle_stamp, data_port, value);
  }
+diff --git a/runner/cosim.c b/runner/cosim.c
+index 618a9bd..cbd5561 100644
+--- a/runner/cosim.c
++++ b/runner/cosim.c
+@@ -11,6 +11,9 @@
+  * parked. See DIFFERENTIAL-COSIMULATION.md + the GENESIS proposal.
+  */
+ #include "cosim.h"
++/* Deterministic pad injection (pairing #1 driver API). */
++void cosim_set_pad_override(unsigned bits, int active);
++int  cosim_get_pad_override(unsigned *bits);
+ #include "include/genesis_runtime.h"   /* g_cpu, g_cosim_cycle/next_cp, proto */
+ /* The timingfields/vdpfields drill commands + the full-state hash read the own-
+  * backend globals (g_machine/GVDP), which don't exist in the oracle build. */
+@@ -251,6 +254,42 @@ static void handle(sock_t c, char *line) {
+             off += snprintf(out+off, sizeof out-off, " a%d %08x", i, g_cpu.A[i]);
+         off += snprintf(out+off, sizeof out-off, "\n");
+         send_str(c, out);
++        } else if (!strncmp(line, "mem ", 4)) {
++        unsigned addr = 0, len = 0;
++        if (sscanf(line + 4, "%x %x", &addr, &len) == 2 && len <= 0x10000u) {
++            extern uint8_t g_ram[0x10000];
++            int off = 0;
++            for (unsigned i = 0; i < len; i++) {
++                off += snprintf(out + off, sizeof out - off, "%02x",
++                                g_ram[(addr + i) & 0xFFFFu]);
++                if (off > (int)sizeof out - 8) break;
++            }
++            snprintf(out + off, sizeof out - off, "\n");
++            send_str(c, out);
++        } else {
++            send_str(c, "err\n");
++        }
++    } else if (!strncmp(line, "z80mem ", 7)) {
++        unsigned addr = 0, len = 0;
++        if (sscanf(line + 7, "%x %x", &addr, &len) == 2 && len <= 0x2000u) {
++            int off = 0;
++            for (unsigned i = 0; i < len; i++) {
++                off += snprintf(out + off, sizeof out - off, "%02x",
++                                g_machine.bus.z80_ram[(addr + i) & 0x1FFFu]);
++                if (off > (int)sizeof out - 8) break;
++            }
++            snprintf(out + off, sizeof out - off, "\n");
++            send_str(c, out);
++        } else {
++            send_str(c, "err\n");
++        }
++    } else if (!strncmp(line, "pad ", 4)) {
++        unsigned v = 0;
++        if (sscanf(line + 4, "%x", &v) == 1)
++            cosim_set_pad_override((unsigned)v, 1);
++        else
++            cosim_set_pad_override(0, 0);
++        send_str(c, "ok\n");
+     } else if (!strncmp(line, "inject ram ", 11)) {
+         unsigned addr, xorv;
+         if (sscanf(line + 11, "%x %x", &addr, &xorv) == 2)
+@@ -431,3 +470,19 @@ void cosim_init(void) {
+     fprintf(stderr, "[COSIM] listening on 127.0.0.1:%u  stride=%llu\n",
+             port, (unsigned long long)s_stride);
+ }
++
++/* Deterministic pad injection for pairing #1: the driver sets one mask and both
++ * instances feed it to the guest on the same checkpoint, so input timing cannot
++ * drift between the recompiled and interpreted sides. */
++static unsigned cosim_pad_bits = 0;
++static int      cosim_pad_active = 0;
++void cosim_set_pad_override(unsigned bits, int active)
++{
++    cosim_pad_bits = bits;
++    cosim_pad_active = active;
++}
++int cosim_get_pad_override(unsigned *bits)
++{
++    if (bits) *bits = cosim_pad_bits;
++    return cosim_pad_active;
++}
+diff --git a/runner/glue.c b/runner/glue.c
+index 9678eef..d014f12 100644
+--- a/runner/glue.c
++++ b/runner/glue.c
+@@ -439,6 +439,48 @@ int recomp_dispatch_ram_stub(uint32_t addr)
+     return 0;
+ }
+ 
++/* Per-instruction timing trace: pc, cost, cumulative counters. Enabled only when
++ * GENESIS_INSN_TRACE names a file; GENESIS_INSN_TRACE_FROM/_TO bound the frames. */
++#define GEN_TRACE_RING 262144u
++typedef struct { uint32_t pc, cost, acyc; } GenTraceRec;
++static GenTraceRec s_trace_ring[GEN_TRACE_RING];
++static uint32_t s_trace_head = 0, s_trace_total = 0;
++static FILE *s_trace_file = NULL;
++static int s_trace_init = 0, s_trace_dumped = 0;
++static uint32_t s_trace_at_frame = 66;
++
++void genesis_trace_insn(uint32_t pc, uint32_t cycles)
++{
++    if (!s_trace_init) {
++        s_trace_init = 1;
++        const char *p = getenv("GENESIS_INSN_TRACE");
++        if (p && *p) s_trace_file = fopen(p, "w");
++        const char *a = getenv("GENESIS_INSN_TRACE_FRAME");
++        if (a && *a) s_trace_at_frame = (uint32_t)strtoul(a, NULL, 10);
++    }
++    if (!s_trace_file) return;
++    /* Ring keeps the most recent instructions; the dump is anchored to a shared
++     * event (reaching frame N), so both backends' dumps end at the same moment
++     * and can be aligned from the tail instead of by frame/window/counter. */
++    GenTraceRec *r = &s_trace_ring[s_trace_head & (GEN_TRACE_RING - 1u)];
++    r->pc = pc & 0xFFFFFFu;
++    r->cost = cycles;
++    r->acyc = (uint32_t)g_audio_cycle_counter;
++    s_trace_head++;
++    if (s_trace_total < GEN_TRACE_RING) s_trace_total++;
++    if (!s_trace_dumped && g_frame_count >= s_trace_at_frame) {
++        uint32_t n = s_trace_total, start = s_trace_head - n;
++        fprintf(s_trace_file, "# frame %u ring %u\n", (unsigned)g_frame_count, n);
++        for (uint32_t k = 0; k < n; k++) {
++            GenTraceRec *q = &s_trace_ring[(start + k) & (GEN_TRACE_RING - 1u)];
++            fprintf(s_trace_file, "%06X %u %u\n", (unsigned)q->pc, q->cost, q->acyc);
++        }
++        fclose(s_trace_file);
++        s_trace_file = NULL;
++        s_trace_dumped = 1;
++    }
++}
++
+ void glue_reset_frame_sync(void)
+ {
+     g_hybrid_cycle_counter = 0;
+@@ -697,6 +739,29 @@ static int     s_game_yielded_break = 0;
+ /* Called from DoCycles (inside Iterate). Runs game code for a chunk. */
+ static cc_u32f s_chunk_cycles = 0;  /* budget for current chunk */
+ 
++/* Why did the 68K chunk return? Logged per chunk when GENESIS_CHUNK_LOG is set,
++ * so two backends can be compared on when they hand the CPU back. */
++extern uint32_t g_snd_frame;
++extern unsigned g_snd_line;
++static void chunk_log(const char *why)
++{
++    static int on = -1;
++    if (on < 0) { const char *e = getenv("GENESIS_CHUNK_LOG"); on = (e && *e && *e != '0'); }
++    if (!on) return;
++    fprintf(stderr, "[CHUNK] f=%u line=%u why=%s budget=%d\n",
++            (unsigned)g_snd_frame, (unsigned)g_snd_line, why, (int)s_cycle_budget);
++    fflush(stderr);
++}
++
++/* Diagnostic: disable the generator's register-span batching at runtime, so the
++ * 68K is charged per instruction exactly like the interpreter. */
++int genesis_spans_disabled(void)
++{
++    static int v = -1;
++    if (v < 0) { const char *e = getenv("GENESIS_NO_SPANS"); v = (e && *e && *e != '0'); }
++    return v;
++}
++
+ void glue_run_game_chunk(uint32_t cycles)
+ {
+     /* Existing adapters qualify their first CPU yield while held. An adapter
+@@ -705,7 +770,7 @@ void glue_run_game_chunk(uint32_t cycles)
+     if (!s_game_running || !s_game_fiber)
+         return;
+     if (s_game_yielded_vblank)
+-        return;
++        { chunk_log("vblank-park"); return; }
+ #if SONIC_REVERSE_DEBUG
+     /* Tier 2: game fiber has parked at a breakpoint. Keep DoCycles
+      * no-opping until Iterate returns to main.c, where rdb_park_drain
+@@ -725,6 +790,7 @@ void glue_run_game_chunk(uint32_t cycles)
+             s_irq_cycle_debt -= (uint32_t)cycles;
+             if (s_irq_cycle_debt == 0)
+                 s_irq_cycle_debt_level = 0;
++            chunk_log("irq-debt");
+             return;
+         }
+         cycles -= s_irq_cycle_debt;
+@@ -747,6 +813,7 @@ void glue_run_game_chunk(uint32_t cycles)
+     s_state_parked=0;
+     fiber_switch(s_game_fiber);
+     instruction_watchdog_reset();
++    chunk_log("yield");
+     s_interleave_active = 0;
+ }
+ 
+diff --git a/runner/include/genesis_runtime.h b/runner/include/genesis_runtime.h
+index ba1174a..59dc93a 100644
+--- a/runner/include/genesis_runtime.h
++++ b/runner/include/genesis_runtime.h
+@@ -236,9 +236,11 @@ void glue_check_vblank(void);
+ extern uint32_t g_audio_cycle_counter;
+ 
+ #include "native_register_budget.h"
++int genesis_spans_disabled(void);
+ static inline int genesis_native_register_span_ready(unsigned cycles,unsigned count)
+ {
+     if(!cycles||!count)return 0;
++    if(genesis_spans_disabled())return 0;
+     uint32_t cycle=g_cycle_accumulator,threshold=g_vblank_threshold;
+     /* No ordinary retirement check runs in this phase. Retain the small
+      * original guard without reading private budget/watchdog state. */
+@@ -250,6 +252,13 @@ static inline int genesis_native_register_span_ready(unsigned cycles,unsigned co
+         2u*GENESIS_NATIVE_WALL_FRAME_CYCLES,b->interleave_active,b->in_vblank_service,
+         b->main_cpu_divisor,b->cycle_budget,b->budget_cyc_seen,cycles,count);
+ }
++/* ---- Per-instruction timing trace (timing diagnosis) --------------------
++ * Emitted by the generator after each instruction's cycle accounting and
++ * mirrored by the interpreter. Cheap no-op unless GENESIS_INSN_TRACE names a
++ * file; the frame window is selected with GENESIS_INSN_TRACE_FROM / _TO. */
++void genesis_trace_insn(uint32_t pc, uint32_t cycles);
++#define GEN_TRACE(pc, n) genesis_trace_insn((uint32_t)(pc), (uint32_t)(n))
++
+ #ifndef GEN_NATIVE_REGISTER_SPAN_READY
+ #define GEN_NATIVE_REGISTER_SPAN_READY(cycles, count) \
+     genesis_native_register_span_ready((cycles), (count))
 diff --git a/runner/m68k_interp.c b/runner/m68k_interp.c
-index c7adb60..1c0d9ee 100644
+index 1290d52..1c0d9ee 100644
 --- a/runner/m68k_interp.c
 +++ b/runner/m68k_interp.c
-@@ -1123,7 +1123,8 @@ static M68kiStatus exec_one(const M68KInstr *ins, uint32_t *next_pc) {
+@@ -13,7 +13,8 @@
+  * mis-executes. Widening coverage is purely additive and always safe.
+  */
+ #include "m68k_interp.h"
+-#include "m68k_decoder.h"   /* recompiler/src — added to the runner include path */
++#include "m68k_decoder.h"
++uint32_t g_interp_pc = 0;   /* address of the instruction being executed (diagnostic) */   /* recompiler/src — added to the runner include path */
+ #include "rom_parser.h"     /* GenesisRom, rom_read* (decoder's fetch source)    */
+ #ifdef GENESIS_COSIM
+ #include "game_cycles.h"    /* game_insn_cost — clown-measured baked costs        */
+@@ -1122,7 +1123,8 @@ static M68kiStatus exec_one(const M68KInstr *ins, uint32_t *next_pc) {
   * This is the runtime tail code_generator.c's emit_cycle_accounting() appends
   * after EVERY generated instruction:
   *
@@ -98,7 +325,7 @@ index c7adb60..1c0d9ee 100644
   *     g_cycle_accumulator   += N;
   *     g_audio_cycle_counter += N;
   *     if (g_cycle_accumulator >= g_vblank_threshold) glue_check_vblank();
-@@ -1308,6 +1309,11 @@ static void interp_account_cycles(const M68KInstr *ins) {
+@@ -1307,11 +1309,17 @@ static void interp_account_cycles(const M68KInstr *ins) {
  #endif
      if (cyc < 0) cyc = interp_estimate_cycles(ins);
      if (cyc < 0) cyc = 4;                          /* never stall the clock */
@@ -110,6 +337,295 @@ index c7adb60..1c0d9ee 100644
      g_native_insn_count++;
      g_cycle_accumulator   += (uint32_t)cyc;
      g_audio_cycle_counter += (uint32_t)cyc;
+     if (g_cycle_accumulator >= g_vblank_threshold)
+         glue_check_vblank();
++    GEN_TRACE((uint32_t)ins->addr, (uint32_t)cyc);
+     /* Differential co-sim: advance the same monotonic checkpoint axis the
+      * recompiled backend advances via emit_cycle_accounting's GEN_COSIM_TICK,
+      * with the identical per-instruction cost — so both backends park at the
+@@ -1336,10 +1344,11 @@ M68kiStatus m68k_interp_step(void) {
+     }
+     uint32_t next;
+     s_illegal_ea = 0;
++    g_interp_pc = ins.addr;
+     M68kiStatus st = exec_one(&ins, &next);
+     if (st != M68KI_OK) return st;
+     if (s_illegal_ea) {                       /* illegal An-destination encoding */
+-        g_m68ki_bad_pc = ins.addr; g_m68ki_bad_op = ins.words[0];
++        g_interp_pc = ins.addr; g_m68ki_bad_pc = ins.addr; g_m68ki_bad_op = ins.words[0];
+         return M68KI_HALT_UNIMPL;
+     }
+     g_cpu.PC = next & 0xFFFFFFu;
+@@ -1437,10 +1446,11 @@ M68kiStatus m68k_interp_run_framed(uint32_t entry_pc, uint32_t *out_exit_pc) {
+ 
+         uint32_t next;
+         s_illegal_ea = 0;
+-        M68kiStatus st = exec_one(&ins, &next);
++        g_interp_pc = ins.addr;
++    M68kiStatus st = exec_one(&ins, &next);
+         if (st != M68KI_OK) return st;
+         if (s_illegal_ea) {
+-            g_m68ki_bad_pc = ins.addr; g_m68ki_bad_op = ins.words[0];
++            g_interp_pc = ins.addr; g_m68ki_bad_pc = ins.addr; g_m68ki_bad_op = ins.words[0];
+             return M68KI_HALT_UNIMPL;
+         }
+         g_cpu.PC = next & 0xFFFFFFu;
+@@ -1509,10 +1519,11 @@ M68kiStatus m68k_interp_run_handler(uint32_t entry_pc) {
+ 
+         uint32_t next;
+         s_illegal_ea = 0;
+-        M68kiStatus st = exec_one(&ins, &next);
++        g_interp_pc = ins.addr;
++    M68kiStatus st = exec_one(&ins, &next);
+         if (st != M68KI_OK) return st;
+         if (s_illegal_ea) {
+-            g_m68ki_bad_pc = ins.addr; g_m68ki_bad_op = ins.words[0];
++            g_interp_pc = ins.addr; g_m68ki_bad_pc = ins.addr; g_m68ki_bad_op = ins.words[0];
+             return M68KI_HALT_UNIMPL;
+         }
+         g_cpu.PC = next & 0xFFFFFFu;
+@@ -1607,10 +1618,11 @@ M68kiStatus m68k_interp_run_ram_handler(uint32_t entry_pc, uint32_t *out_exit_pc
+ 
+         uint32_t next;
+         s_illegal_ea = 0;
+-        M68kiStatus st = exec_one(&ins, &next);
++        g_interp_pc = ins.addr;
++    M68kiStatus st = exec_one(&ins, &next);
+         if (st != M68KI_OK) return st;
+         if (s_illegal_ea) {
+-            g_m68ki_bad_pc = ins.addr; g_m68ki_bad_op = ins.words[0];
++            g_interp_pc = ins.addr; g_m68ki_bad_pc = ins.addr; g_m68ki_bad_op = ins.words[0];
+             return M68KI_HALT_UNIMPL;
+         }
+         g_cpu.PC = next & 0xFFFFFFu;
+diff --git a/runner/main.c b/runner/main.c
+index 3dc3c96..d0d9bf4 100644
+--- a/runner/main.c
++++ b/runner/main.c
+@@ -937,6 +937,7 @@ static int      s_sampling_netplay_local = 0;
+ #endif
+ 
+ #include "input_script.h"
++#include "crash_report.h"
+ 
+ static cc_bool input_requested_cb(void *user_data,
+                                    cc_u8f player_id,
+@@ -1121,6 +1122,20 @@ static void collect_sim_input(GenesisSimInput *in)
+     for (int p = 2; p < GENESIS_SIM_MAX_PLAYERS; p++)
+         if (!input_gameplay_blocked())
+             in->pad[p] = (uint16_t)(input_current_mask(p) | input_script_player_mask(p));
++#ifdef GENESIS_COSIM
++    {
++        extern int cosim_get_pad_override(unsigned *bits);
++        unsigned ov = 0;
++        if (cosim_get_pad_override(&ov))
++            in->pad[0] = (uint16_t)ov;
++    }
++#endif
++    { static int plog = -1; static unsigned prev = 0;
++      if (plog < 0) { const char *e = getenv("DSH_PAD_LOG"); plog = (e && *e && *e != '0'); }
++      if (plog && in->pad[0] != prev) {
++          fprintf(stderr, "[PAD] frame=%u mask=0x%02X\n", (unsigned)s_current_frame_for_input, (unsigned)in->pad[0]);
++          prev = in->pad[0];
++      } }
+     for (int p = 0; p < GENESIS_SIM_MAX_PLAYERS; p++)
+         if (input_player_connected(p) || input_script_player_used(p))
+             in->human_mask |= 1u << p;
+@@ -1709,10 +1724,33 @@ static int runner_dump_vram_file(const char *path)
+     return ok;
+ }
+ 
++/* TEMPORARY: dump the same buffer as an uncompressed PPM so the image can be
++ * inspected even when the PNG writer produces black output in this build. */
++static void dsh_dump_ppm(const char *path)
++{
++    char ppm[600];
++    snprintf(ppm, sizeof ppm, "%s.ppm", path);
++    FILE *f = fopen(ppm, "wb");
++    if (!f) return;
++    fprintf(f, "P6\n%d %d\n255\n", s_screen_width, s_screen_height);
++    for (int y = 0; y < s_screen_height; y++) {
++        const uint32_t *row = s_framebuf + (size_t)y * MAX_SCREEN_WIDTH;
++        for (int x = 0; x < s_screen_width; x++) {
++            uint32_t px = row[x];
++            unsigned char rgb[3] = { (unsigned char)((px >> 16) & 0xFF),
++                                     (unsigned char)((px >> 8) & 0xFF),
++                                     (unsigned char)(px & 0xFF) };
++            fwrite(rgb, 1, 3, f);
++        }
++    }
++    fclose(f);
++}
++
+ int runner_write_screenshot_file(const char *path)
+ {
+     char full_path[512];
+     const char *resolved = resolve_runner_path(path, full_path, sizeof(full_path));
++    dsh_dump_ppm(resolved);
+     int ok = png_write_argb(resolved, s_framebuf,
+                             s_screen_width, s_screen_height,
+                             MAX_SCREEN_WIDTH) == 0;
+@@ -1775,6 +1813,82 @@ static void check_ramdump(void)
+ #endif
+ }
+ 
++/* TEMPORARY: periodic framebuffer capture for hands-on sessions.
++ * DSH_AUTOSHOT=<dir> writes <dir>/f%05u.ppm every DSH_AUTOSHOT_EVERY frames. */
++static const char *s_autoshot_dir = NULL;   /* set by --autoshot-dir */
++static int s_autoshot_every = 30;
++static void dsh_autoshot(uint32_t frame)
++{
++    static int every = -1;
++    const char *dir = s_autoshot_dir ? s_autoshot_dir : getenv("DSH_AUTOSHOT");
++    if (!dir || !*dir) return;
++    if (every < 0) {
++        const char *e = getenv("DSH_AUTOSHOT_EVERY");
++        every = s_autoshot_every;
++        if (!s_autoshot_dir && e && *e) every = atoi(e);
++        if (every <= 0) every = 30;
++    }
++    if (frame % (uint32_t)every) return;
++    char path[512];
++    snprintf(path, sizeof path, "%s/f%05u.ppm", dir, frame);
++    FILE *f = fopen(path, "wb");
++    if (!f) return;
++    fprintf(f, "P6\n%d %d\n255\n", s_screen_width, s_screen_height);
++    for (int y = 0; y < s_screen_height; y++) {
++        const uint32_t *row = s_framebuf + (size_t)y * MAX_SCREEN_WIDTH;
++        for (int x = 0; x < s_screen_width; x++) {
++            uint32_t px = row[x];
++            unsigned char rgb[3] = { (unsigned char)((px >> 16) & 0xFF),
++                                     (unsigned char)((px >> 8) & 0xFF),
++                                     (unsigned char)(px & 0xFF) };
++            fwrite(rgb, 1, 3, f);
++        }
++    }
++    fclose(f);
++}
++
++/* TEMPORARY: dump the reverse-debug block ring at a chosen frame. */
++static void dsh_blockring_dump(uint32_t frame)
++{
++    static int done = 0;
++    const char *at = getenv("DSH_BLOCKRING_AT");
++    if (!at || !*at || done) return;
++    unsigned long want = strtoul(at, NULL, 0);
++    if (frame < want) return;
++    done = 1;
++    const char *path = getenv("DSH_BLOCKRING");
++    if (!path || !*path) return;
++    uint32_t buf[512]; uint32_t total = 0;
++    unsigned n = crash_report_recent_blocks(buf, 512, &total);
++    FILE *f = fopen(path, "w");
++    if (!f) return;
++    fprintf(f, "# frame %u total %u\n", frame, total);
++    for (unsigned i = 0; i < n; i++) fprintf(f, "%06X\n", buf[i]);
++    fclose(f);
++}
++
++/* TEMPORARY: ring-buffered work-RAM snapshots for hands-on sessions.
++ * --autodump-ram-dir <dir> [--autodump-ram-every N] [--autodump-ram-keep K]
++ * Writes <dir>/r%06u.ram every N frames and deletes snapshots older than K. */
++static const char *s_autodump_ram_dir = NULL;
++static int s_autodump_ram_every = 30;
++static int s_autodump_ram_keep = 400;
++static void dsh_autodump_ram(uint32_t frame)
++{
++    if (!s_autodump_ram_dir) return;
++    if (frame % (uint32_t)s_autodump_ram_every) return;
++    char path[600];
++    snprintf(path, sizeof path, "%s/r%06u.ram", s_autodump_ram_dir, frame);
++    FILE *f = fopen(path, "wb");
++    if (!f) return;
++    extern uint8_t g_ram[0x10000];
++    fwrite(g_ram, 1, 0x10000, f);
++    fclose(f);
++    uint32_t old = frame - (uint32_t)(s_autodump_ram_every * s_autodump_ram_keep);
++    snprintf(path, sizeof path, "%s/r%06u.ram", s_autodump_ram_dir, old);
++    remove(path);
++}
++
+ static void write_framelog(uint32_t frame)
+ {
+     if (!s_framelog_file) return;
+@@ -2650,6 +2764,14 @@ int main(int argc, char *argv[])
+             hash_on_mode = 1;
+         } else if (strcmp(argv[i], "--input-script") == 0 && i + 1 < argc) {
+             input_script_path = argv[++i];
++        } else if (strcmp(argv[i], "--autoshot-dir") == 0 && i + 1 < argc) {
++            s_autoshot_dir = argv[++i];
++        } else if (strcmp(argv[i], "--autodump-ram-dir") == 0 && i + 1 < argc) {
++            s_autodump_ram_dir = argv[++i];
++        } else if (strcmp(argv[i], "--autodump-ram-every") == 0 && i + 1 < argc) {
++            s_autodump_ram_every = atoi(argv[++i]); if (s_autodump_ram_every <= 0) s_autodump_ram_every = 30;
++        } else if (strcmp(argv[i], "--autodump-ram-keep") == 0 && i + 1 < argc) {
++            s_autodump_ram_keep = atoi(argv[++i]); if (s_autodump_ram_keep <= 0) s_autodump_ram_keep = 400;
+         } else if (strcmp(argv[i], "--exec-coverage-out") == 0 && i + 1 < argc) {
+             exec_cov_out = argv[++i];
+         } else if (strcmp(argv[i], "--yield-log") == 0) {
+@@ -3063,7 +3185,9 @@ int main(int argc, char *argv[])
+         win_h = win_w * WS_ASPECT_H / WS_ASPECT_W;   /* true 16:9 */
+     }
+     /* Scripted launcher tests must stay hidden after the handoff to gameplay. */
+-    int test_hidden = getenv("LNG_SCRIPT") && getenv("LNG_TEST_HIDDEN");
++    int test_hidden = (getenv("LNG_SCRIPT") && getenv("LNG_TEST_HIDDEN"));
++    { const char *h = getenv("DSH_HIDDEN");
++      if (h && *h && *h != '0') test_hidden = 1; }
+     Uint32 win_flags = ((benchmark_frames || test_hidden) ? SDL_WINDOW_HIDDEN : SDL_WINDOW_SHOWN)
+                      | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
+     /* Launcher tri-state: 1 = borderless (desktop resolution, letterboxed by
+@@ -3891,6 +4015,11 @@ session_begin:;
+            * every tick; the run must end on the undigested run's machine. */
+           if (completed && s_digest_every) { GenesisRbDigest dd; genesis_rb_digest(&dd); }
+           FRAME_PHASE(1);
++          { static int jit = -1;
++            if (jit < 0) { const char *e = getenv("GENESIS_FRAME_JITTER_US");
++                           jit = (e && *e) ? atoi(e) : 0; if (jit < 0) jit = 0; }
++            if (jit > 0) SDL_Delay((Uint32)jit / 1000u ? (Uint32)(jit / 1000u) : 0),
++                          (jit > 0 && jit < 1000) ? (void)SDL_Delay(0) : (void)0; }
+           s_screen_width = game_video_output_width(&s_video_frame, gvdp_active_width(&g_machine.vdp));
+           /* Output height doubles in interlace mode 2 (S2 2P split-screen);
+            * the existing interlace display modes (tv squash / raw) take over
+@@ -3971,6 +4100,9 @@ session_begin:;
+ 
+ 
+         /* --framelog: works in ALL build modes */
++        dsh_autoshot(frame_num);
++        dsh_blockring_dump(frame_num);
++        dsh_autodump_ram(frame_num);
+         write_framelog(frame_num);
+ 
+         /* [SND-TRACE] headless auto-dump: when --snd-dump-frame N is set, dump
+@@ -4609,6 +4741,14 @@ session_begin:;
+         return 1;
+     }
+     glue_shutdown();
++    { const char *dd = getenv("GENESIS_AUDIO_DELIVERY_DUMP");
++      if (dd && *dd) {
++          extern int audio_delivery_dump(const char *path);
++          if (audio_delivery_dump(dd) == 0)
++              fprintf(stderr, "[audio] delivery dump written: %s\n", dd);
++          else
++              fprintf(stderr, "[audio] delivery dump failed: %s\n", dd);
++      } }
+     audio_close();
+     shadow_worker_cleanup();
+     genesis_hd_gpu_destroy(hd_gpu);
+diff --git a/runner/rb_state.c b/runner/rb_state.c
+index 7294574..2306f92 100644
+--- a/runner/rb_state.c
++++ b/runner/rb_state.c
+@@ -41,8 +41,8 @@ _Static_assert(sizeof(g_ram) == 0x10000, "work RAM size changed");
+ #if UINTPTR_MAX == 0xFFFFFFFFFFFFFFFFu
+ /* 64-bit layouts (the host pointers inside are scrubbed by machine_rb_save). */
+ _Static_assert(sizeof(GVDP) == 65824, "GVDP changed: review machine_rb_save (pointers) and rb_state");
+-_Static_assert(sizeof(GenesisBus) == 24664, "GenesisBus changed: review machine_rb_save and rb_state");
+-_Static_assert(sizeof(GenesisMachine) == 90576, "GenesisMachine changed: review machine_rb_save and rb_state");
++_Static_assert(sizeof(GenesisBus) == 24688, "GenesisBus changed: review machine_rb_save and rb_state");
++_Static_assert(sizeof(GenesisMachine) == 90600, "GenesisMachine changed: review machine_rb_save and rb_state");
+ #endif
+ 
+ /* ---- sections ---------------------------------------------------------------- */
 diff --git a/runner/sim_step.c b/runner/sim_step.c
 index 5b530a1..33a15ed 100644
 --- a/runner/sim_step.c
@@ -203,14 +719,18 @@ index 5b530a1..33a15ed 100644
      return 1;
  }
 diff --git a/runner/video/genesis_bus.c b/runner/video/genesis_bus.c
-index 2358402..e10b007 100644
+index d0e1647..e10b007 100644
 --- a/runner/video/genesis_bus.c
 +++ b/runner/video/genesis_bus.c
-@@ -12,7 +12,17 @@ void gbus_68k_z80ram(unsigned off, uint8_t val);
- #include <stdio.h>
- #include <stdlib.h>
- unsigned long g_vdp_data_writes = 0;
--unsigned long g_ym_reads = 0, g_ym_tb_seen = 0;   /* 68K writes to the VDP data port */
+@@ -7,6 +7,34 @@
+  * genesis_machine.c).
+  */
+ #include "genesis_bus.h"
++
++void gbus_68k_z80ram(unsigned off, uint8_t val);
++#include <stdio.h>
++#include <stdlib.h>
++unsigned long g_vdp_data_writes = 0;
 +unsigned long g_ym_reads = 0, g_ym_tb_seen = 0;
 +unsigned long g_ym_irq_count = 0, g_ym_ta_period = 0, g_ym_ta_fires = 0, g_ym_keyons = 0, g_ym_writes = 0, g_ym_dac_writes = 0;
 +int g_ym_pcm_active = 0;
@@ -222,25 +742,44 @@ index 2358402..e10b007 100644
 +    const char *e = getenv("GENESIS_YM_IRQ_DIV");
 +    if (e && *e) { unsigned v = (unsigned)strtoul(e, NULL, 10); if (v >= 1 && v <= 16) g_ym_irq_div = v; }
 +}
- static void z80cmd_log(uint16_t off, uint8_t val);
- static void z80rd_log(uint32_t a, uint8_t val);
- /* Log 68K READS of Z80 space (the driver handshake polls) for the sound hunt. */
-@@ -113,6 +123,11 @@ extern void glue_charge_68k_stall(uint32_t cycles);
++static void z80cmd_log(uint16_t off, uint8_t val);
++static void z80rd_log(uint32_t a, uint8_t val);
++/* Log 68K READS of Z80 space (the driver handshake polls) for the sound hunt. */
++static void z80rd_log(uint32_t a, uint8_t val)
++{
++    static int on = -1;
++    extern unsigned long g_snd_frame;
++    if (on < 0) { const char *e = getenv("GENESIS_Z80CMD_LOG"); on = (e && *e && *e != '0'); }
++    if (!on) return;
++    if (g_snd_frame < 3300ul) return;      /* only the interesting window */
++    fprintf(stderr, "[Z80RD] f=%lu a=%06X val=%02X\n", g_snd_frame, a, val);
++}
+ #include "genesis_expansion.h"
+ #include "../audio/event_queue.h"
+ #include <string.h>
+@@ -93,6 +121,12 @@ extern void glue_charge_68k_stall(uint32_t cycles);
+  * needed by supported software. */
+ #define MASTER_CYCLES_PER_FRAME  (262ull * 3420ull)
  #define YM_TIMER_B_MASTER_TICK   (16ull * 144ull * 7ull)
- #define YM_TIMER_A_MASTER_TICK   (144ull * 7ull)
- 
++#define YM_TIMER_A_MASTER_TICK   (144ull * 7ull)
++
 +/* The YM2612 timer overflow raises an IRQ to the Z80 when its enable bit is set.
 + * Without it a polling driver sees a flag far later than the hardware interrupt and
 + * can miss ticks (music races / desyncs). */
 +extern void ym_raise_z80_irq(void);
-+
+ 
  static uint64_t ym_abs_z80_stamp(void)
  {
-     return (uint64_t)g_snd_frame * MASTER_CYCLES_PER_FRAME +
-@@ -131,30 +146,62 @@ static uint64_t ym_timer_a_period(const GenesisBus *b)
-     return (uint64_t)(1024u - ta) * YM_TIMER_A_MASTER_TICK;
+@@ -106,20 +140,68 @@ static uint64_t ym_abs_68k_stamp(void)
+            (uint64_t)STAMP_68K();
  }
  
++static uint64_t ym_timer_a_period(const GenesisBus *b)
++{
++    unsigned ta = ((unsigned)b->ym_timer_a_hi << 2) | ((unsigned)b->ym_timer_a_lo & 3u);
++    return (uint64_t)(1024u - ta) * YM_TIMER_A_MASTER_TICK;
++}
++
 +
 +/* The driver's interrupt handler at $0038 is entered for any Z80 IRQ. Raising the
 + * FM timer interrupt made tempo scale with the timer rate, so it is off unless
@@ -258,14 +797,7 @@ index 2358402..e10b007 100644
 +
  static void ym_timer_update(GenesisBus *b, uint64_t now)
  {
-     /* Timer A (the one Shadowrun's driver uses for its sequencer). */
--    if (b->ym_timer_a_running && b->ym_timer_a_period != 0 &&
--        now >= b->ym_timer_a_deadline) {
--        if (b->ym_mode & 0x04u)         /* enable timer-A overflow flag */
--            b->ym_status |= 0x01u;
--        uint64_t elapsed = now - b->ym_timer_a_deadline;
--        uint64_t periods = elapsed / b->ym_timer_a_period + 1u;
--        b->ym_timer_a_deadline += periods * b->ym_timer_a_period;
++    /* Timer A (the one Shadowrun's driver uses for its sequencer). */
 +    if (b->ym_timer_a_running && b->ym_timer_a_period != 0) {
 +        /* Deliver EVERY elapsed period, one interrupt each, so a driver counting
 +         * ticks sees the rate the chip produces instead of one collapsed event. */
@@ -285,8 +817,8 @@ index 2358402..e10b007 100644
 +        if (guard >= 16u) {             /* fell far behind: snap to now */
 +            b->ym_timer_a_deadline = now + b->ym_timer_a_period;
 +        }
-     }
- 
++    }
++
      if (!b->ym_timer_b_running || b->ym_timer_b_period == 0 ||
          now < b->ym_timer_b_deadline)
          return;
@@ -314,19 +846,20 @@ index 2358402..e10b007 100644
  }
  
  static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
-@@ -166,11 +213,22 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
+@@ -131,10 +213,29 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
          b->ym_addr[bank] = val;
          return;
      }
 -    if (bank != 0) return;              /* timers live in register bank 0 */
 -
 -    uint8_t reg = b->ym_addr[0];
+-    if (reg == 0x26u) {
 +    /* The OPN register file is shared by both ports: the part-1 latch addresses
 +     * the same registers, so timer/DAC control written through port 1 must be
 +     * honoured too (Shadowrun's driver programs the DAC/timer via $4002/$4003). */
 +    uint8_t reg = b->ym_addr[bank];
-     { static int yl = -1;
-       if (yl < 0) { const char *e = getenv("GENESIS_YMREG_LOG"); yl = (e && *e && *e != '0'); }
++    { static int yl = -1;
++      if (yl < 0) { const char *e = getenv("GENESIS_YMREG_LOG"); yl = (e && *e && *e != '0'); }
 +      if (reg == 0x2Au) { g_ym_dac_writes++; g_ym_pcm_active = 1; }
 +      if (reg == 0x2Bu) { extern unsigned long g_snd_frame;
 +        static int dl = -1;
@@ -337,14 +870,21 @@ index 2358402..e10b007 100644
 +        g_ym_writes++;
 +        if ((val & 0xF0u) == 0x00u || (val & 0x30u) == 0x30u) { g_ym_keyons++;
 +          fprintf(stderr, "[YKEY] f=%lu val=%02X\n", g_snd_frame, val); } }
-       if (yl && (reg == 0x26u || reg == 0x27u || reg == 0x24u || reg == 0x25u))
-           fprintf(stderr, "[YMREG] f=%lu reg=%02X val=%02X\n", g_snd_frame, reg, val); }
-     if (reg == 0x24u) {
-@@ -189,9 +247,18 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
++      if (yl && (reg == 0x26u || reg == 0x27u || reg == 0x24u || reg == 0x25u))
++          fprintf(stderr, "[YMREG] f=%lu reg=%02X val=%02X\n", g_snd_frame, reg, val); }
++    if (reg == 0x24u) {
++        b->ym_timer_a_hi = val;
++    } else if (reg == 0x25u) {
++        b->ym_timer_a_lo = val & 0x03u;
++    } else if (reg == 0x26u) {
+         b->ym_timer_b = val;
+         b->ym_timer_b_period =
+             (uint64_t)(256u - (unsigned)val) * YM_TIMER_B_MASTER_TICK;
+@@ -145,6 +246,22 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
+         if (val & 0x10u) b->ym_status &= 0xfeu;
          if (val & 0x20u) b->ym_status &= 0xfdu;
          b->ym_mode = val;
-         if (val & 0x01u) {                  /* bit 0: load/run timer A */
--            b->ym_timer_a_period = ym_timer_a_period(b);
++        if (val & 0x01u) {                  /* bit 0: load/run timer A */
 +            /* Loading starts a stopped timer. A flag reset (bit 4) written with
 +             * the load restarts a running timer so a newly programmed $24/$25
 +             * period takes effect (Shadowrun re-arms timer A at 7.6 kHz when it
@@ -356,36 +896,253 @@ index 2358402..e10b007 100644
 +                g_ym_ta_period = (unsigned long)newp;
 +                b->ym_timer_a_deadline = now + newp;
 +            }
-             b->ym_timer_a_running = 1;
--            b->ym_timer_a_deadline = now + b->ym_timer_a_period;
-         } else {
-             b->ym_timer_a_running = 0;
++            b->ym_timer_a_running = 1;
++        } else {
++            b->ym_timer_a_running = 0;
++        }
+         if (val & 0x02u) {
+             /* Loading starts a stopped timer. A flag acknowledgement that
+              * leaves it loaded must preserve the running timer's phase. */
+@@ -358,6 +475,7 @@ uint16_t gbus_read16(GenesisBus *b, uint32_t a)
+              * driver decompression's back-reference copy (MOVE.B (A4,D4.W),
+              * (A5)+) — the S2 silent-audio bug. */
+             unsigned off = a & 0x1FFFu;
++            z80rd_log(a, b->z80_ram[off]);
+             return (uint16_t)(((uint16_t)b->z80_ram[off] << 8)
+                               | b->z80_ram[(off + 1u) & 0x1FFFu]);
          }
+@@ -419,15 +537,50 @@ uint8_t gbus_peek8(const GenesisBus *b, uint32_t a)
+ {
+     a &= 0xFFFFFFu;
+     if (a >= 0xA00000u && a < 0xA10000u && (a & 0xFFFFu) < 0x2000u)
+-        return b->z80_ram[a & 0x1FFFu];
++    { uint8_t v = b->z80_ram[a & 0x1FFFu]; z80rd_log(a, v); return v; }
+     if (sram_hit(b, a))
+         return b->sram[a - b->sram_base];
+     uint16_t w = gbus_peek16(b, a & ~1u);
+     return (a & 1) ? (uint8_t)w : (uint8_t)(w >> 8);
+ }
+ 
++
++/* Watch writes to one work-RAM address (GENESIS_RAMW=<hex 24-bit address>). */
++extern uint32_t g_interp_pc;
++static void ramw_log(uint32_t a, unsigned val, int width)
++{
++    static int on = -2; static uint32_t want = 0;
++    extern unsigned long g_snd_frame;
++    if (on == -2) { const char *e = getenv("GENESIS_RAMW");
++                    on = (e && *e) ? 1 : 0;
++                    if (on) want = (uint32_t)strtoul(e, NULL, 16); }
++    if (!on) return;
++    if ((a & 0xFFFFFFu) == want)
++        fprintf(stderr, "[RAMW] f=%lu addr=%06X val=%0*X width=%d pc=%06X\n",
++                g_snd_frame, a & 0xFFFFFFu, width/4, val, width, (unsigned)g_interp_pc);
++}
++
++
++/* Diagnostic: force the first write to the RNG seed ($FFF9F8) so both backends start
++ * with the same random stream (GENESIS_FORCE_SEED=<hex16>). */
++static uint16_t force_seed(uint32_t a, uint16_t v)
++{
++    static int on = -1; static uint16_t want = 0;
++    extern unsigned long g_snd_frame;
++    if (on < 0) { const char *e = getenv("GENESIS_FORCE_SEED");
++                  on = (e && *e) ? 1 : 0;
++                  if (on) want = (uint16_t)strtoul(e, NULL, 16); }
++    if (!on) return v;
++    /* the boot checksum stores the seed during the first ~20 frames */
++    if ((a & 0xFFFFFFu) == 0xFFF9F8u && g_snd_frame <= 20ul) return want;
++    return v;
++}
++
+ void gbus_write16(GenesisBus *b, uint32_t a, uint16_t v)
+ {
++    v = force_seed(a, v);
++    if ((a & 0xFF0000u) == 0xFF0000u) ramw_log(a, v, 16);
++    if ((a & 0xFFFFFFu) >= 0xC00000u && (a & 0xFFFFFFu) < 0xC00004u) g_vdp_data_writes++;
+     a &= 0xFFFFFFu;
+     if (a >= 0xFF0000u) {                                            /* RAM     */
+         uint16_t o = (uint16_t)(a & 0xFFFFu);
+@@ -460,7 +613,7 @@ void gbus_write16(GenesisBus *b, uint32_t a, uint16_t v)
+         if ((a & 0xFFFFu) < 0x2000u) { unsigned off = a & 0x1FFFu;
+             snd_trace_68k_write((uint16_t)off, b->z80_ram[off], (uint8_t)(v >> 8),
+                                 b->z80_busreq, b->z80_reset_off);  /* [SND-TRACE] */
+-            b->z80_ram[off] = (uint8_t)(v >> 8); return; }
++            gbus_68k_z80ram(off, (uint8_t)(v >> 8)); z80cmd_log((uint16_t)off, (uint8_t)(v >> 8)); b->z80_ram[off] = (uint8_t)(v >> 8); return; }
+         if (a >= 0xA04000u && a <= 0xA04003u) {
+             uint8_t port = (uint8_t)(a & 3);
+             ym_write_side_effect(b, port, (uint8_t)v, ym_abs_68k_stamp());
+@@ -503,6 +656,8 @@ uint8_t gbus_read8(GenesisBus *b, uint32_t a)
+ 
+ void gbus_write8(GenesisBus *b, uint32_t a, uint8_t v)
+ {
++    if ((a & 0xFF0000u) == 0xFF0000u) ramw_log(a, v, 8);
++    if ((a & 0xFFFFFFu) >= 0xC00000u && (a & 0xFFFFFFu) < 0xC00004u) g_vdp_data_writes++;
+     a &= 0xFFFFFFu;
+     uint8_t *extra_ram = expansion_ram_at(a, 1);
+     if (extra_ram) { *extra_ram = v; return; }
+@@ -512,7 +667,7 @@ void gbus_write8(GenesisBus *b, uint32_t a, uint8_t v)
+         if ((a & 0xFFFFu) < 0x2000u) { unsigned off = a & 0x1FFFu;
+             snd_trace_68k_write((uint16_t)off, b->z80_ram[off], v,
+                                 b->z80_busreq, b->z80_reset_off);  /* [SND-TRACE] */
+-            b->z80_ram[off] = v; return; }
++            gbus_68k_z80ram(off, v); z80cmd_log((uint16_t)off, v); b->z80_ram[off] = v; return; }
+         if (a >= 0xA04000u && a <= 0xA04003u) {
+             uint8_t port = (uint8_t)(a & 3);
+             ym_write_side_effect(b, port, v, ym_abs_68k_stamp());
+@@ -534,6 +689,8 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
+     /* YM2612 status: BUSY is clear; timer flags advance on scheduler time. */
+     if (addr < 0x6000u) {
+         ym_timer_update(b, ym_abs_z80_stamp());
++        g_ym_reads++;
++        if (b->ym_status & 0x02u) g_ym_tb_seen++;
+         return b->ym_status;
+     }
+     if (addr < 0x8000u) return 0xFFu;                               /* bank/PSG   */
+@@ -542,10 +699,51 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
+     return gbus_read8(b, a68);
+ }
+ 
++
++/* Watchpoint helper for 68K-side writes into Z80 RAM (the driver upload and
++ * mailbox path). Enabled with GENESIS_Z80_WATCH=<hex offset>. */
++void gbus_68k_z80ram(unsigned off, uint8_t val)
++{
++    static int w = -2;
++    extern uint16_t g_z80_pc_now;
++    static int wto = -2;
++    if (w == -2) { const char *e = getenv("GENESIS_Z80_WATCH");
++                   const char *e2 = getenv("GENESIS_Z80_WATCH_TO");
++                   w = e ? (int)strtoul(e, NULL, 16) : -1;
++                   wto = e2 ? (int)strtoul(e2, NULL, 16) : w; }
++    if (w >= 0 && (int)off >= w && (int)off <= wto) {
++        fprintf(stderr, "[Z80W68K] frame=%u off=%04X val=%02X\n", (unsigned)g_snd_frame, off, val);
++        fflush(stderr);
++    }
++    (void)g_z80_pc_now;
++}
++
++/* Log every 68K write into Z80 RAM (the sound driver's command mailbox) so the two
++ * backends' command streams can be compared. GENESIS_Z80CMD_LOG=1. */
++static void z80cmd_log(uint16_t off, uint8_t val)
++{
++    static int on = -1;
++    extern unsigned long g_snd_frame;
++    if (on < 0) { const char *e = getenv("GENESIS_Z80CMD_LOG"); on = (e && *e && *e != '0'); }
++    if (!on) return;
++    fprintf(stderr, "[Z80CMD] f=%u off=%04X val=%02X\n", (unsigned)g_snd_frame, off, val);
++}
++
+ void gbus_z80_write(GenesisBus *b, uint16_t addr, uint8_t val)
+ {
+     if (addr < 0x4000u) { unsigned off = addr & 0x1FFFu;
+         if (g_sndwatch[off]) snd_trace_z80((uint16_t)off, val, 1);  /* [SND-TRACE] */
++        { extern uint16_t g_z80_pc_now;
++          static int w = -2, wto = -2;
++          if (w == -2) { const char *e = getenv("GENESIS_Z80_WATCH");
++                         const char *e2 = getenv("GENESIS_Z80_WATCH_TO");
++                         w = e ? (int)strtoul(e, NULL, 16) : -1;
++                         wto = e2 ? (int)strtoul(e2, NULL, 16) : w; }
++          if (w >= 0 && (int)off >= w && (int)off <= wto) {
++              fprintf(stderr, "[Z80W] frame=%u pc=%04X addr=%04X val=%02X\n",
++                      (unsigned)g_snd_frame, (unsigned)g_z80_pc_now, off, val);
++              fflush(stderr);
++          } }
+         b->z80_ram[off] = val; return; }                           /* RAM+mirror */
+     if (addr < 0x6000u) {
+         uint8_t port = (uint8_t)(addr & 3);
 diff --git a/runner/video/genesis_bus.h b/runner/video/genesis_bus.h
-index 3f9dcb7..bb12a64 100644
+index 242774c..bb12a64 100644
 --- a/runner/video/genesis_bus.h
 +++ b/runner/video/genesis_bus.h
-@@ -166,4 +166,5 @@ void     gbus_z80_write(GenesisBus *b, uint16_t addr, uint8_t val);
+@@ -49,6 +49,11 @@ typedef struct GenesisBus {
+     uint8_t  ym_timer_b_running;
+     uint64_t ym_timer_b_deadline;       /* absolute scheduler master cycles    */
+     uint64_t ym_timer_b_period;         /* cached period in master cycles      */
++    uint8_t  ym_timer_a_hi;             /* register $24 (timer A high 8 bits)  */
++    uint8_t  ym_timer_a_lo;             /* register $25 (timer A low 2 bits)   */
++    uint8_t  ym_timer_a_running;
++    uint64_t ym_timer_a_deadline;       /* absolute scheduler master cycles    */
++    uint64_t ym_timer_a_period;         /* cached period in master cycles      */
+ 
+     /* Controllers / I-O. */
+     uint16_t pad[2];                    /* live button state (GPAD_* bits, 12) */
+@@ -161,4 +166,5 @@ void     gbus_z80_write(GenesisBus *b, uint16_t addr, uint8_t val);
  uint8_t *gbus_sram_buffer(GenesisBus *b);
  uint32_t gbus_sram_size(const GenesisBus *b);
  
 +void gbus_ym_timer_service(GenesisBus *b, uint64_t now);
  #endif /* GENESIS_BUS_H */
 diff --git a/runner/video/genesis_machine.c b/runner/video/genesis_machine.c
-index dd356e9..7fa0313 100644
+index bfbe22d..8c94550 100644
 --- a/runner/video/genesis_machine.c
 +++ b/runner/video/genesis_machine.c
-@@ -15,7 +15,8 @@
+@@ -14,7 +14,9 @@
+ #include "genesis_dac.h"  /* authentic Genesis output-DAC color ladder */
  #include "chip_trace.h"   /* [CHIP-TRACE] shared FM/PSG stream ring + g_snd_* globals */
  #include <string.h>
- #include <stdlib.h>
 -#include <stdio.h>   /* [SND-TRACE] temporary sound-command lifecycle trace */
++#include <stdlib.h>
 +#include <stdio.h>
 +#include <time.h>   /* [SND-TRACE] temporary sound-command lifecycle trace */
  
  GenesisMachine g_machine;
  
-@@ -539,10 +540,40 @@ void genesis_indexed_sink_adapter(void *ctx,int line,const uint32_t *argb,int wi
+@@ -29,7 +31,8 @@ GenesisMachine g_machine;
+ /* g_snd_trace / g_snd_frame / g_snd_line now live in the shared chip_trace.c
+  * (so the oracle build has them too). This scheduler still owns/advances
+  * g_snd_frame + g_snd_line per scanline below. */
+-uint8_t       g_sndwatch[0x2000];    /* 1 = a gameplay 68K write touched this  */
++uint8_t       g_sndwatch[0x2000];
++uint16_t      g_z80_pc_now = 0;   /* PC of the Z80 instruction being executed */    /* 1 = a gameplay 68K write touched this  */
+ 
+ #ifndef GEN_DEV_TRACE
+ /* Prod builds: no ring memory, no captures, dumps report "not compiled in".
+@@ -430,11 +433,25 @@ uint32_t machine_z80_stamp(void)
+ 
+ static void step_z80(GenesisMachine *m, uint32_t target)
+ {
++    /* Optional per-line Z80 stepping log: line, master cycle, debt in/out, PC.
++     * Two backends writing this log can be diffed line by line to find the first
++     * line whose Z80 execution differs. */
++    static FILE *zl = NULL; static int zi = 0;
++    unsigned pc0 = 0, d_in = 0;
++    if (!zi) { zi = 1; const char *p2 = getenv("GENESIS_Z80_LOG"); if (p2 && *p2) zl = fopen(p2, "w"); }
++    if (zl) { pc0 = (unsigned)m->z80.pc; d_in = m->z80_cycle_debt; }
++
+     if (!m->bus.z80_reset_off || m->bus.z80_busreq) return;   /* Z80 halted */
+     /* The 68K pulsed the Z80 reset line while halted — restart the core at
+      * $0000 now that it's released, so it runs the freshly-uploaded driver
+      * from its entry point (not from a stale, pre-upload PC). */
+     if (m->bus.z80_reset_pending) {
++        { static int rr = -1;
++          if (rr < 0) { const char *e = getenv("GENESIS_Z80_RELEASE"); rr = (e && *e && *e != '0'); }
++          if (rr) { fprintf(stderr, "[Z80REL] frame=%u line=%u master=%u debt=%u\n",
++                            (unsigned)g_snd_frame, (unsigned)g_snd_line,
++                            (unsigned)m->master_cycle, (unsigned)m->z80_cycle_debt);
++                    fflush(stderr); } }
+ #ifdef GENESIS_Z80_RECOMP
+         z80_recomp_reset();
+         z80_recomp_mirror_to_interpreter(&m->z80);
+@@ -464,12 +481,17 @@ static void step_z80(GenesisMachine *m, uint32_t target)
+         done+=z80_recomp_step_one();
+ #else
+         unsigned long c0 = m->z80.cyc;
++        g_z80_pc_now = (uint16_t)m->z80.pc;
+         z80_step(&m->z80);     /* one instruction, then interrupt processing */
+         done += (uint32_t)(m->z80.cyc - c0);
+ #endif
+     }
+ #endif
+     m->z80_cycle_debt = done - target;
++    if (zl) {
++        fprintf(zl, "%u %u %u %u %u %u %x\n", (unsigned)g_snd_frame, (unsigned)g_snd_line, (unsigned)m->master_cycle,
++                (unsigned)d_in, (unsigned)m->z80_cycle_debt, (unsigned)m->z80.pc, pc0);
++    }
+ #ifdef GEN_DEV_TRACE
+     /* [SND-TRACE] V-int acceptance: pending fell 1->0 during this slice. */
+     if (g_snd_trace && pend_before &&
+@@ -518,10 +540,40 @@ void genesis_indexed_sink_adapter(void *ctx,int line,const uint32_t *argb,int wi
      if(pixels && pixels->argb)pixels->argb(pixels->user,line,argb,width);
  }
  
@@ -426,7 +1183,7 @@ index dd356e9..7fa0313 100644
      GenesisIndexedSink *pixels=sink==genesis_indexed_sink_adapter?(GenesisIndexedSink *)user:NULL;
      void *producer_user=pixels?pixels->user:user;
      int active_h = gvdp_screen_height(&m->vdp);
-@@ -550,6 +581,36 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+@@ -529,6 +581,56 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
      static uint32_t rowbuf[GVDP_MAX_WIDTH];
      static GVDPRasterRow raster;
  
@@ -458,12 +1215,32 @@ index dd356e9..7fa0313 100644
 +                              ((unsigned)g_ram[0xF9EE]<<8)|(unsigned)g_ram[0xF9EF];
 +                unsigned wait = ((unsigned)g_ram[0xDF88]<<8)|(unsigned)g_ram[0xDF89];
 +                extern unsigned machine_z80_pc(void);
-+                fprintf(stderr, "[CNT] f=%lu vb=%u wait=%u z80pc=%04X\n", g_snd_frame, vb, wait,
-+                        machine_z80_pc() & 0xFFFFu); } }
-     { static int il = -1; static uint64_t prev = 0;
-       extern uint64_t g_native_insn_count;
-       if (il < 0) { const char *e = getenv("GENESIS_INSN_FRAME_LOG"); il = (e && *e && *e != '0'); }
-@@ -575,7 +636,10 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
++                extern uint32_t machine_z80_stamp(void);
++                printf(""); /* keep stdout untouched */
++                fprintf(stderr, "[CNT] f=%lu vb=%u wait=%u z80pc=%04X z80cyc=%u\n", g_snd_frame, vb, wait,
++                        machine_z80_pc() & 0xFFFFu, (unsigned)machine_z80_stamp()); } }
++    { static int il = -1; static uint64_t prev = 0;
++      extern uint64_t g_native_insn_count;
++      if (il < 0) { const char *e = getenv("GENESIS_INSN_FRAME_LOG"); il = (e && *e && *e != '0'); }
++      if (il) { fprintf(stderr, "[IPF] f=%lu insn=%llu\n", g_snd_frame,
++                        (unsigned long long)(g_native_insn_count - prev));
++                prev = g_native_insn_count; } }
++    { static const char *zd = NULL; static int zi = 0;
++      if (!zi) { zi = 1; zd = getenv("GENESIS_Z80RAM_DIR"); }
++      if (zd && *zd) { char path[512];
++        snprintf(path, sizeof path, "%s/z%06lu.bin", zd, g_snd_frame);
++        FILE *zf = fopen(path, "wb");
++        if (zf) { fwrite(g_machine.bus.z80_ram, 1, 0x2000, zf); fclose(zf); } } }
++    { static int vl = -1; extern unsigned long g_vdp_data_writes;
++      if (vl < 0) { const char *e = getenv("GENESIS_VDPW_LOG"); vl = (e && *e && *e != '0'); }
++      if (vl) { extern unsigned long g_ym_reads, g_ym_tb_seen;
++                fprintf(stderr, "[VDPW] f=%lu writes=%lu ym_reads=%lu tb=%lu\n",
++                        g_snd_frame, g_vdp_data_writes, g_ym_reads, g_ym_tb_seen);
++                fflush(stderr); g_vdp_data_writes = 0; } }
+     for (int line = 0; line < LINES_TOTAL; line++) {
+         unsigned irq = gvdp_begin_scanline(&m->vdp, line);
+         g_snd_line = (unsigned)line;   /* [SND-TRACE] */
+@@ -536,17 +638,29 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
          s_z80_off   = 0;   /* 68K writes during the chunk below land at the line start */
  
          /* Advance the recompiled 68K ~one scanline (it parks at WaitForVBlank). */
@@ -474,7 +1251,9 @@ index dd356e9..7fa0313 100644
  
          /* If a prior V-int was latched while the 68K had IRQs masked (e.g. a
           * move #$2700,sr screen transition), deliver it now that the chunk above
-@@ -584,8 +648,17 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+-         * may have dropped the mask — keeps v_vblank_count in step with the
++         * may have dropped the mask - keeps v_vblank_count in step with the
+          * oracle instead of losing the masked V-int. */
          glue_own_vint_service_latched(&m->vdp);
          glue_own_hint_service_latched(&m->vdp);
  
@@ -492,7 +1271,7 @@ index dd356e9..7fa0313 100644
  
          /* Deliver interrupts to the 68K (and the Z80 at vblank). */
          if (irq & GVDP_IRQ_VBLANK) {
-@@ -629,6 +702,7 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+@@ -590,6 +704,7 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
           * when no output is requested (found by the determinism probe,
           * 2026-09-25: replays without rendering forked in the vdp partition
           * in 1-2 of 691 dense probe passes per game). */
@@ -500,7 +1279,7 @@ index dd356e9..7fa0313 100644
          if (line < active_h) {
              int dbl = gvdp_interlace_double(&m->vdp);
              for (int sub = 0; sub <= dbl; sub++) {
-@@ -674,11 +748,30 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+@@ -635,11 +750,30 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
          if (irq & GVDP_IRQ_HBLANK) glue_own_interrupt(4, &m->vdp);
  
          m->master_cycle += MASTER_PER_LINE;
