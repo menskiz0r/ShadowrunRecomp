@@ -2324,3 +2324,27 @@ passage is ~1.85x slower at the same pitches. A capture that is ~1.85x slower at
 pitch is characteristic of a time-stretched encode (rate changed without pitch shift), not
 of a game running at a different clock - a game running fast would raise the pitch by the
 same factor.
+
+### 2026-11-18: the reference capture carries time-stretch artifacts
+
+Three independent measurements of the longplay against the port at the same musical
+material:
+
+```
+drum period        ours 244 ms     reference 452 ms     ratio 1.85
+bass pitch         ours 66/98/130/164 Hz   reference identical  (ratio 1.00)
+transient attacks  ours median 16.5 ms     reference 29.0 ms  ratio 1.76
+```
+
+A game running at a wrong clock changes pitch and tempo by the SAME factor. Here pitch is
+identical while rhythm is 1.85x slower and transients are smeared by 1.76x - the signature
+of a time-stretched (retimed) encode, not of gameplay at a different speed. A genuine
+real-time capture keeps sharp attacks; the port's attacks are 3-4 ms on the sharp hits.
+
+The port's own schedule is the ROM's: one song step per VBlank (traced `$0066` = 1/frame),
+timer IRQs zero during music (measured `irq=0/s`), note spacing invariant to Z80 speed,
+68K speed, timer rate, PCM rate, event spreading and Z80 tick rate. At 60 Hz that yields the
+ROM's authored tempo, which is what the port plays.
+
+Conclusion: there is no port-side tempo defect to fix. The 1.85x difference belongs to the
+reference encode.
