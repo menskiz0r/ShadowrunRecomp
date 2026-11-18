@@ -1756,3 +1756,45 @@ is driven by. The driver lives in Z80 RAM (not ROM); a mid-run dump is saved at
 `LD ($003E),SP; RETI` that the main loop uses as a tick). A Z80 disassembler is not
 available in this environment (capstone build lacks Z80), so that is the first thing to
 provision.
+
+### 2026-11-18: Z80 driver main loop decoded (drum clock is an iteration counter)
+
+Read the uploaded driver from `build/z80_driver_1700.bin` (Z80 RAM, 6144 bytes) by hand.
+Entry at `$08C3`:
+
+```
+08C3  EXX                     ; bank swap
+08C4  06 15  16 1F            ; B=$15, D=$1F
+08C8  21 00 40  D9  FB        ; HL=$4000, EXX, EI
+08CD  21 11 7F  36 9F..FF     ; PSG port init
+08E6  2A B7 02  22 B3 02      ; save $02B7
+08EC  2A C4 02  22 B5 02      ; save $02C4
+08F2  3E C9  32 B7 02         ; patch $02B7 with $C9 (RET)
+08F7  CD 41 00                ; CALL tick body at $0041
+08FA  CD B7 02                ; CALL $02B7 (self-modifying hook)
+08FD  CD 02 03
+0900  CD B7 02
+0903  CD 41 00
+0906  06 00
+0908  3A 40 00                ; A = ($0040)
+090B  D6 01                   ; decrement
+090D  38 0B                   ; underflow -> $091A
+090F  32 40 00
+0912  CD 66 00                ; CALL $0066
+0915  CD 41 00
+0918  06 01
+091A  CD B7 02 ...
+```
+
+The IRQ vector is a six-byte `LD ($003E),SP; RETI`, and the real tick body lives at
+`$0041` (`DI; PUSH AF; PUSH HL; LD HL,$003F; LD A,(HL); OR A; JR Z,...`), i.e. the main
+loop detects an interrupt by the SP value latched at `$003E/$003F`.
+
+Key consequence: `$0040` is a countdown decremented **once per loop iteration** (not per
+interrupt), and `$0066` fires when it underflows. That is why halving the timer
+interrupts (`GENESIS_YM_IRQ_DIV=2`) left the drum tempo unchanged - the pattern clock is
+an iteration counter, so its rate depends on how fast the loop runs, which in turn depends
+on the cost of the per-iteration calls (`$02B7`, `$0302`, `$0066`, `$0041`).
+
+Next: pin down what sets `$0040` and what `$0066` does, and compare the loop's
+iterations/second with the hardware expectation.
