@@ -758,7 +758,7 @@ index 5b530a1..33a15ed 100644
      return 1;
  }
 diff --git a/runner/video/genesis_bus.c b/runner/video/genesis_bus.c
-index d0e1647..234df89 100644
+index d0e1647..5a26515 100644
 --- a/runner/video/genesis_bus.c
 +++ b/runner/video/genesis_bus.c
 @@ -7,6 +7,36 @@
@@ -895,13 +895,13 @@ index d0e1647..234df89 100644
 +      }
 +      if (guard >= 16u) b->ym_timer_b_deadline = now + b->ym_timer_b_period; }
 +}
++
  
 -    /* Timer B is periodic while load/enable bit 1 remains set. Advance the
 -     * deadline past 'now' without an unbounded catch-up loop. */
 -    uint64_t elapsed = now - b->ym_timer_b_deadline;
 -    uint64_t periods = elapsed / b->ym_timer_b_period + 1u;
 -    b->ym_timer_b_deadline += periods * b->ym_timer_b_period;
-+
 +void gbus_ym_timer_service(GenesisBus *b, uint64_t now)
 +{
 +    ym_timer_update(b, now);
@@ -1090,7 +1090,7 @@ index d0e1647..234df89 100644
          if (a >= 0xA04000u && a <= 0xA04003u) {
              uint8_t port = (uint8_t)(a & 3);
              ym_write_side_effect(b, port, v, ym_abs_68k_stamp());
-@@ -534,7 +750,12 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
+@@ -534,23 +750,92 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
      /* YM2612 status: BUSY is clear; timer flags advance on scheduler time. */
      if (addr < 0x6000u) {
          ym_timer_update(b, ym_abs_z80_stamp());
@@ -1104,7 +1104,16 @@ index d0e1647..234df89 100644
      }
      if (addr < 0x8000u) return 0xFFu;                               /* bank/PSG   */
      /* $8000-$FFFF: banked window into the 68K bus. */
-@@ -542,15 +763,70 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
+     uint32_t a68 = ((uint32_t)b->z80_bank << 15) + (uint32_t)(addr - 0x8000u);
++    { static int tr = -1;
++      if (tr < 0) { const char *e = getenv("GENESIS_TRACK_LOG"); tr = (e && *e && *e != '0'); }
++      if (tr && addr >= 0x9600u && addr < 0x9640u) {
++          extern unsigned long g_snd_frame;
++          uint8_t v = gbus_read8(b, a68);
++          fprintf(stderr, "[ZTRACK] f=%lu z80=%04X bank=%03X a68=%06X val=%02X\n",
++                  g_snd_frame, addr, b->z80_bank, a68, v);
++          return v; }
++    }
      return gbus_read8(b, a68);
  }
  
@@ -1175,8 +1184,14 @@ index d0e1647..234df89 100644
          if (port & 1u)
              audio_event_push_latched(machine_z80_stamp(), port,
                                       b->ym_addr[port >> 1], val);
-@@ -562,6 +838,7 @@ void gbus_z80_write(GenesisBus *b, uint16_t addr, uint8_t val)
+@@ -560,8 +845,13 @@ void gbus_z80_write(GenesisBus *b, uint16_t addr, uint8_t val)
+     } /* FM */
+     if (addr < 0x6100u) {                                /* $6000 bank register   */
          b->z80_bank = ((b->z80_bank >> 1) | ((val & 1) << 8)) & 0x1FF;
++        { static int bl = -1;
++          if (bl < 0) { const char *e = getenv("GENESIS_ZBANK_LOG"); bl = (e && *e && *e != '0'); }
++          if (bl) { extern unsigned long g_snd_frame;
++                    fprintf(stderr, "[ZBANK] f=%lu val=%02X bank=%03X\n", g_snd_frame, val, b->z80_bank); } }
          return;
      }
 +{ static int mp = -1; if (mp < 0) { const char *e = getenv("GENESIS_MUTE_PSG"); mp = (e && *e && *e != '0'); } if (mp) return; }
@@ -1206,7 +1221,7 @@ index 242774c..bb12a64 100644
 +void gbus_ym_timer_service(GenesisBus *b, uint64_t now);
  #endif /* GENESIS_BUS_H */
 diff --git a/runner/video/genesis_machine.c b/runner/video/genesis_machine.c
-index bfbe22d..6672b64 100644
+index bfbe22d..5659b4a 100644
 --- a/runner/video/genesis_machine.c
 +++ b/runner/video/genesis_machine.c
 @@ -14,7 +14,9 @@
@@ -1462,16 +1477,27 @@ index bfbe22d..6672b64 100644
  
          /* Deliver interrupts to the 68K (and the Z80 at vblank). */
          if (irq & GVDP_IRQ_VBLANK) {
-@@ -571,11 +734,18 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+@@ -571,11 +734,29 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
  #endif
              }
  #endif
 +            { static int vdiv = -1; static unsigned vphase = 0;
++              static double vhz = -2.0, vacc = 0.0;
 +              if (vdiv < 0) { const char *e = getenv("GENESIS_Z80_VINT_DIV");
 +                              vdiv = (e && *e) ? atoi(e) : 1;
-+                              if (vdiv < 1 || vdiv > 8) vdiv = 1; }
-+              if (vdiv <= 1 || ++vphase >= (unsigned)vdiv) {
-+                  vphase = 0;
++                              if (vdiv < 1 || vdiv > 8) vdiv = 1;
++                              e = getenv("GENESIS_Z80_VINT_HZ");
++                              vhz = (e && *e) ? atof(e) : -1.0; }
++              int fire = (vdiv <= 1);
++              if (vhz > 0.0) {
++                  vacc += vhz / 59.9401;
++                  fire = (vacc >= 1.0);
++                  if (fire) vacc -= 1.0;
++              } else if (vdiv > 1) {
++                  fire = (++vphase >= (unsigned)vdiv);
++                  if (fire) vphase = 0;
++              }
++              if (fire) {
  #ifdef GENESIS_Z80_RECOMP
 -            z80_recomp_assert_irq();
 +                  z80_recomp_assert_irq();
@@ -1483,7 +1509,7 @@ index bfbe22d..6672b64 100644
              glue_own_interrupt(6, &m->vdp);
          }
  
-@@ -590,6 +760,7 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+@@ -590,6 +771,7 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
           * when no output is requested (found by the determinism probe,
           * 2026-09-25: replays without rendering forked in the vdp partition
           * in 1-2 of 691 dense probe passes per game). */
@@ -1491,7 +1517,7 @@ index bfbe22d..6672b64 100644
          if (line < active_h) {
              int dbl = gvdp_interlace_double(&m->vdp);
              for (int sub = 0; sub <= dbl; sub++) {
-@@ -635,11 +806,30 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+@@ -635,11 +817,30 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
          if (irq & GVDP_IRQ_HBLANK) glue_own_interrupt(4, &m->vdp);
  
          m->master_cycle += MASTER_PER_LINE;
