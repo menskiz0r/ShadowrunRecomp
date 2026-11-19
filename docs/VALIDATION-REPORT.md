@@ -2475,3 +2475,27 @@ pattern - while the status FLAG is still what the driver polls to pace DAC bytes
 Change: timer interrupts to the Z80 are now OFF by default (GENESIS_YM_TIMER_IRQ=1 restores
 them). Verified with the change: 0 IRQs/frame in the ambush while DAC still streams at
 10.5 bytes/frame, i.e. PCM is paced by polling as before.
+
+### 2026-11-19: dialogue menus aborted (interior-label dispatch no-op)
+
+Symptom: approaching a bar NPC the screen fades to black as the dialogue opens, then fades
+back with no dialogue.
+
+Replay of a recorded session (13892 frames) shows this exactly: black frames 12780-12810,
+gameplay again at 12840. The session log reports
+`[dispatch] interior-label miss: $020990 ... at frame 12749` - 30 frames before the black
+frames. A second one, `$021174`, occurs at frame 5300.
+
+Cause: `recomp_dispatch_once()` falls back to `genesis_log_dispatch_miss()` for addresses
+that are not function entries, and that path only logs. Interior labels (a JMP into a
+uniform instruction sequence, the Duff's-device shape) therefore execute as a no-op: the
+dialogue routine never runs, the fade completes and control returns.
+
+The runner already contains the correct mechanism - an A7-neutral framed Tier-3 capsule
+(`m68k_interp_run_framed`) that runs the missed target to its depth-0 return and validates
+the return address - but it sits behind `GENESIS_FLOOR`, which is off for this port
+(`tier3_floor_default = 0`).
+
+Change: run that capsule for interior-label misses even with the global floor off
+(`GENESIS_INTERIOR_FLOOR=0` disables). Non-interior misses keep the previous no-op
+behaviour. Boot smoke: 1800 frames clean, no declined capsules.

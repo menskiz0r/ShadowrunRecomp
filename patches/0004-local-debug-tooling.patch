@@ -188,10 +188,36 @@ index 618a9bd..cbd5561 100644
 +    return cosim_pad_active;
 +}
 diff --git a/runner/diagnostic_replay.c b/runner/diagnostic_replay.c
-index 21b945e..a24e027 100644
+index 21b945e..81a34c2 100644
 --- a/runner/diagnostic_replay.c
 +++ b/runner/diagnostic_replay.c
-@@ -353,10 +353,17 @@ int genesis_replay_init(const char *directory, const char *playback,
+@@ -287,6 +287,16 @@ static int scan_keys(void) {
+     }
+   return !ferror(stream) && !fseek(stream, start, SEEK_SET);
+ }
++/* Diagnostic only: allow replaying a session recorded by a different build so a
++ * candidate fix can be exercised against the same input history. State layout
++ * must still be compatible. */
++static int replay_ignore_build(void) {
++    static int v = -1;
++    if (v < 0) { const char *e = getenv("GENESIS_REPLAY_IGNORE_BUILD");
++                 v = (e && *e && *e != '0'); }
++    return v;
++}
++
+ int genesis_replay_boot_sram(const char *name, void *sram, size_t size,
+                              int *loaded) {
+   char sidecar[1400], row[512];
+@@ -297,7 +307,7 @@ int genesis_replay_boot_sram(const char *name, void *sram, size_t size,
+   int ok = bounded_file(f, MAX_TEXT) && bounded_file(s, MAX_STATES) &&
+            fgets(row, sizeof row, f) && !strcmp(row, "GENESISREPLAY 1\n") &&
+            fgets(row, sizeof row, f) && sscanf(row, "BUILD %x", &exe) == 1 &&
+-           exe == genesis_build_exe_fingerprint() &&
++           (exe == genesis_build_exe_fingerprint() || replay_ignore_build()) &&
+            fgets(row, sizeof row, f) && fgets(row, sizeof row, f) &&
+            sscanf(row, "SRAM %u", &flag) == 1 && flag <= 1;
+   FILE *old_stream = stream, *old_states = states;
+@@ -353,10 +363,17 @@ int genesis_replay_init(const char *directory, const char *playback,
      }
      void *boot = NULL;
      size_t n = 0;
@@ -213,8 +239,22 @@ index 21b945e..a24e027 100644
      }
      /* The desktop applied the boot image before its SRAM-loaded callback.
       * Reapplying here would undo legitimate changes made by that callback. */
+@@ -683,6 +700,13 @@ void genesis_replay_end(void) {
+                 "[feedback-replay] FIRST DIVERGENCE execution=%u %s "
+                 "actual=%08x expected=%08x\n",
+                 executions - 1, names[i], got, want[i]);
++        { static int tolerate = -1;
++          if (tolerate < 0) { const char *e = getenv("GENESIS_REPLAY_TOLERATE_DIVERGENCE");
++                              tolerate = (e && *e && *e != '0'); }
++          if (tolerate) {
++              fprintf(stderr, "[feedback-replay] divergence tolerated; continuing\n");
++              continue;
++          } }
+         fail("checkpoint mismatch");
+         break;
+       }
 diff --git a/runner/glue.c b/runner/glue.c
-index 9678eef..1201be1 100644
+index 9678eef..3272549 100644
 --- a/runner/glue.c
 +++ b/runner/glue.c
 @@ -439,6 +439,48 @@ int recomp_dispatch_ram_stub(uint32_t addr)
@@ -333,6 +373,27 @@ index 9678eef..1201be1 100644
      if(s_native_pc_scope && s_native_instruction_open) {
          if(level==6)s_own_vint_latched=1;
          if(level==4)s_own_hint_latched=1;
+@@ -2226,7 +2298,19 @@ void genesis_log_dispatch_miss(uint32_t addr)
+      * charter: interpreter fallback is fine, silent corruption is defeat).
+      *
+      * Default OFF (GENESIS_FLOOR); enabled per game where validated. */
+-    if (floor_enabled() && !s_in_floor && !floor_blacklisted(addr)) {
++    /* Interior-label (JMP into a uniform instruction sequence) misses are a
++     * recompiler codegen gap, not dead data: the static dispatch cannot run
++     * them, so a driver that jumps into the middle of a function silently gets
++     * a no-op. The A7-neutral capsule exists precisely for that shape, so run
++     * it for interior labels even with the global floor off. */
++    static int interior_floor = -1;
++    if (interior_floor < 0) {
++        const char *e = getenv("GENESIS_INTERIOR_FLOOR");
++        interior_floor = !(e && *e == '0');   /* ON unless disabled */
++    }
++
++    if ((floor_enabled() || (interior_floor && is_interior_label(addr))) &&
++        !s_in_floor && !floor_blacklisted(addr)) {
+         uint32_t rl = g_game_spec.expected_rom_size
+                           ? g_game_spec.expected_rom_size : (uint32_t)sizeof(g_rom);
+         /* The native loose-A7 return the caller (JSR site / enclosing JSR) is
 diff --git a/runner/include/genesis_runtime.h b/runner/include/genesis_runtime.h
 index ba1174a..59dc93a 100644
 --- a/runner/include/genesis_runtime.h
