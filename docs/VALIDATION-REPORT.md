@@ -2447,3 +2447,31 @@ Track data path fully decoded:
 What remains: the port's playlist/cue at that scene must be compared against hardware's. The
 video gives the sound but not the driver state, so the final step needs a RAM dump from any
 emulator at the ambush. Everything up to that point is established above.
+
+### 2026-11-19: independent emulator comparison - timer IRQs gated off by default
+
+Built BlastEm 0.6.3 from Debian source with mingw + bundled SDL2, patched for a workspace
+config dir, per-channel YM WAV output (-y) and frame-accurate scripted input injected through
+io_gamepad_down at the same frame numbers as the port's input script.
+
+With identical inputs from reset, the two systems agree before any input (14 s: 162 vs 162 ms,
+18 s: 242 vs 244 ms) but the port shows more drum activity over the run:
+
+```
+                    kick/s   snare/s   hats/s
+blastem (YM only)    12.2      4.6       7.4
+port (FM only)       17.8      8.0       9.4
+```
+
+Player report: BlastEm's drums are the correct speed; the port's drum track races and ends
+before the scene's death voices.
+
+Mechanism: this driver counts EVERY Z80 interrupt as a sequencer tick (the ISR is just
+`LD ($003E),SP; RETI`, and the main loop turns the stored SP into a tick in `$0040`). Once
+PCM was restored, timer A runs at PCM rates (7056/10080/6048 cycles), so delivering timer
+interrupts at the hardware rate fed the driver thousands of ticks per second and raced the
+pattern - while the status FLAG is still what the driver polls to pace DAC bytes.
+
+Change: timer interrupts to the Z80 are now OFF by default (GENESIS_YM_TIMER_IRQ=1 restores
+them). Verified with the change: 0 IRQs/frame in the ambush while DAC still streams at
+10.5 bytes/frame, i.e. PCM is paced by polling as before.
