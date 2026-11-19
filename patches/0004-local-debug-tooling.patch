@@ -214,7 +214,7 @@ index 21b945e..a24e027 100644
      /* The desktop applied the boot image before its SRAM-loaded callback.
       * Reapplying here would undo legitimate changes made by that callback. */
 diff --git a/runner/glue.c b/runner/glue.c
-index 9678eef..d014f12 100644
+index 9678eef..1201be1 100644
 --- a/runner/glue.c
 +++ b/runner/glue.c
 @@ -439,6 +439,48 @@ int recomp_dispatch_ram_stub(uint32_t addr)
@@ -321,6 +321,18 @@ index 9678eef..d014f12 100644
      s_interleave_active = 0;
  }
  
+@@ -1020,6 +1087,11 @@ static void own_run_handler_interleaved(int level, GVDP *vdp)
+ void glue_own_interrupt(int level, GVDP *vdp)
+ {
+     if (!s_game_running) return;
++    if (level == 6) {
++        static int vl = -1;
++        if (vl < 0) { const char *e = getenv("GENESIS_VINT_LOG"); vl = (e && *e && *e != '0'); }
++        if (vl) { static long n = 0; if (++n % 60 == 0) fprintf(stderr, "[V68COUNT] vints=%ld\n", n); }
++    }
+     if(s_native_pc_scope && s_native_instruction_open) {
+         if(level==6)s_own_vint_latched=1;
+         if(level==4)s_own_hint_latched=1;
 diff --git a/runner/include/genesis_runtime.h b/runner/include/genesis_runtime.h
 index ba1174a..59dc93a 100644
 --- a/runner/include/genesis_runtime.h
@@ -1242,7 +1254,7 @@ index 242774c..bb12a64 100644
 +void gbus_ym_timer_service(GenesisBus *b, uint64_t now);
  #endif /* GENESIS_BUS_H */
 diff --git a/runner/video/genesis_machine.c b/runner/video/genesis_machine.c
-index bfbe22d..5659b4a 100644
+index bfbe22d..8021783 100644
 --- a/runner/video/genesis_machine.c
 +++ b/runner/video/genesis_machine.c
 @@ -14,7 +14,9 @@
@@ -1498,7 +1510,7 @@ index bfbe22d..5659b4a 100644
  
          /* Deliver interrupts to the 68K (and the Z80 at vblank). */
          if (irq & GVDP_IRQ_VBLANK) {
-@@ -571,11 +734,29 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+@@ -571,11 +734,33 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
  #endif
              }
  #endif
@@ -1519,6 +1531,10 @@ index bfbe22d..5659b4a 100644
 +                  if (fire) vphase = 0;
 +              }
 +              if (fire) {
++                  { static int vl = -1;
++                    if (vl < 0) { const char *e = getenv("GENESIS_VINT_LOG"); vl = (e && *e && *e != '0'); }
++                    if (vl) { static long vc = 0; extern unsigned long g_snd_frame;
++                              if (++vc % 60 == 0) fprintf(stderr, "[VINTCOUNT] f=%lu asserts=%ld\n", g_snd_frame, vc); } }
  #ifdef GENESIS_Z80_RECOMP
 -            z80_recomp_assert_irq();
 +                  z80_recomp_assert_irq();
@@ -1530,7 +1546,7 @@ index bfbe22d..5659b4a 100644
              glue_own_interrupt(6, &m->vdp);
          }
  
-@@ -590,6 +771,7 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+@@ -590,6 +775,7 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
           * when no output is requested (found by the determinism probe,
           * 2026-09-25: replays without rendering forked in the vdp partition
           * in 1-2 of 691 dense probe passes per game). */
@@ -1538,7 +1554,7 @@ index bfbe22d..5659b4a 100644
          if (line < active_h) {
              int dbl = gvdp_interlace_double(&m->vdp);
              for (int sub = 0; sub <= dbl; sub++) {
-@@ -635,11 +817,30 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
+@@ -635,11 +821,30 @@ void machine_run_frame_ex(GenesisScanlineSink sink, void *user,
          if (irq & GVDP_IRQ_HBLANK) glue_own_interrupt(4, &m->vdp);
  
          m->master_cycle += MASTER_PER_LINE;
