@@ -20,10 +20,10 @@ index 4dfc5fc..bdd1c30 160000
 -Subproject commit 4dfc5fc29fd67d23714126348e678e45952e9462
 +Subproject commit bdd1c307cc553891de05b0c69903d328a00ae692
 diff --git a/runner/audio.c b/runner/audio.c
-index ef618a4..bd9c8f3 100644
+index ef618a4..3482caa 100644
 --- a/runner/audio.c
 +++ b/runner/audio.c
-@@ -61,6 +61,23 @@ static void genesis_audio_callback(void *user, Uint8 *stream, int len)
+@@ -61,6 +61,34 @@ static void genesis_audio_callback(void *user, Uint8 *stream, int len)
      int frames = len / (int)(2 * sizeof(int16_t)); /* stereo S16 */
      Uint64 begin = SDL_GetPerformanceCounter();
      rab_pull(&s_bridge, (int16_t *)stream, frames);
@@ -36,8 +36,19 @@ index ef618a4..bd9c8f3 100644
 +     if (!htried) {
 +         htried = 1;
 +         const char *e = getenv("GENESIS_AUDIO_HOSTDUMP");
-+         const char *path = (e && *e) ? e : "logs/audio-host.s16";
-+         if (!(path[0] == '-' && path[1] == 0)) hd = fopen(path, "wb");
++         if (e && e[0] == '-' && e[1] == 0) { /* disabled */ }
++         else if (e && *e) { hd = fopen(e, "wb"); }
++         else {
++             /* Never overwrite a previous session: pick the first free name. */
++             char path[256];
++             for (int i = 0; i < 1000; i++) {
++                 if (i == 0) snprintf(path, sizeof path, "logs/audio-host.s16");
++                 else        snprintf(path, sizeof path, "logs/audio-host-%03d.s16", i);
++                 FILE *probe = fopen(path, "rb");
++                 if (!probe) { hd = fopen(path, "wb"); break; }
++                 fclose(probe);
++             }
++         }
 +     }
 +     if (hd && written < (300LL << 20)) {
 +         if (fwrite(stream, 1, (size_t)len, hd) == (size_t)len) written += len;
@@ -47,7 +58,7 @@ index ef618a4..bd9c8f3 100644
      uint32_t elapsed = (uint32_t)((SDL_GetPerformanceCounter() - begin)
                                  * 1000000ull / s_perf_freq);
      if (elapsed > s_callback_peak_us) s_callback_peak_us = elapsed;
-@@ -165,7 +182,9 @@ int audio_init(int psg_sample_rate)
+@@ -165,7 +193,9 @@ int audio_init(int psg_sample_rate)
      want.freq     = s_output_rate;
      want.format   = AUDIO_S16SYS;
      want.channels = 2;
@@ -58,7 +69,7 @@ index ef618a4..bd9c8f3 100644
      want.callback = genesis_audio_callback;
  
      /* Allow SDL to renegotiate the request; the bridge keys off got.freq. */
-@@ -189,7 +208,7 @@ int audio_init(int psg_sample_rate)
+@@ -189,7 +219,7 @@ int audio_init(int psg_sample_rate)
       * hitch for free (the servo drains the excess down to target over time),
       * and stretch_enable (default 1) conceals brief producer stalls by a
       * pitch-preserving loop of recent audio instead of fading to silence. */
@@ -758,7 +769,7 @@ index 5b530a1..33a15ed 100644
      return 1;
  }
 diff --git a/runner/video/genesis_bus.c b/runner/video/genesis_bus.c
-index d0e1647..5a26515 100644
+index d0e1647..37140b0 100644
 --- a/runner/video/genesis_bus.c
 +++ b/runner/video/genesis_bus.c
 @@ -7,6 +7,36 @@
@@ -1184,7 +1195,7 @@ index d0e1647..5a26515 100644
          if (port & 1u)
              audio_event_push_latched(machine_z80_stamp(), port,
                                       b->ym_addr[port >> 1], val);
-@@ -560,8 +845,13 @@ void gbus_z80_write(GenesisBus *b, uint16_t addr, uint8_t val)
+@@ -560,9 +845,22 @@ void gbus_z80_write(GenesisBus *b, uint16_t addr, uint8_t val)
      } /* FM */
      if (addr < 0x6100u) {                                /* $6000 bank register   */
          b->z80_bank = ((b->z80_bank >> 1) | ((val & 1) << 8)) & 0x1FF;
@@ -1194,10 +1205,20 @@ index d0e1647..5a26515 100644
 +                    fprintf(stderr, "[ZBANK] f=%lu val=%02X bank=%03X\n", g_snd_frame, val, b->z80_bank); } }
          return;
      }
-+{ static int mp = -1; if (mp < 0) { const char *e = getenv("GENESIS_MUTE_PSG"); mp = (e && *e && *e != '0'); } if (mp) return; }
-     if (addr == 0x7F11u) { CHIP_PC_Z80(); audio_event_push(machine_z80_stamp(), AUDIO_PORT_PSG, val); return; }       /* PSG          */
+-    if (addr == 0x7F11u) { CHIP_PC_Z80(); audio_event_push(machine_z80_stamp(), AUDIO_PORT_PSG, val); return; }       /* PSG          */
++    if (addr == 0x7F11u) {
++        static int mp = -1;
++        if (mp < 0) { const char *e = getenv("GENESIS_MUTE_PSG"); mp = (e && *e && *e != '0'); }
++        if (mp) return;
++        static int pl = -1;
++        if (pl < 0) { const char *e = getenv("GENESIS_PSG_LOG"); pl = (e && *e && *e != '0'); }
++        if (pl) { extern unsigned long g_snd_frame;
++                  fprintf(stderr, "[PSGW] f=%lu val=%02X pc=%04X\n", g_snd_frame, val,
++                          (unsigned)(machine_z80_pc() & 0xFFFFu)); }
++        CHIP_PC_Z80(); audio_event_push(machine_z80_stamp(), AUDIO_PORT_PSG, val); return; }       /* PSG          */
      if (addr >= 0x8000u) {                                          /* banked window */
          uint32_t a68 = ((uint32_t)b->z80_bank << 15) + (uint32_t)(addr - 0x8000u);
+         gbus_write8(b, a68, val);
 diff --git a/runner/video/genesis_bus.h b/runner/video/genesis_bus.h
 index 242774c..bb12a64 100644
 --- a/runner/video/genesis_bus.h
