@@ -1,10 +1,9 @@
 diff --git a/external/m68k-recomp-core b/external/m68k-recomp-core
-index 6f705f2..ddae973 160000
 --- a/external/m68k-recomp-core
 +++ b/external/m68k-recomp-core
 @@ -1 +1 @@
 -Subproject commit 6f705f274f994250a473be4e11a1113e344bca8e
-+Subproject commit ddae973072ce7ec56407a89d1d7a3e6a94e1487e-dirty
++Subproject commit 6f705f274f994250a473be4e11a1113e344bca8e-dirty
 diff --git a/external/rbengine b/external/rbengine
 index b29bdde..28a2a47 160000
 --- a/external/rbengine
@@ -79,10 +78,10 @@ index ef618a4..3482caa 100644
      if (rab_init(&s_bridge, &cfg) != 0) {
          fprintf(stderr, "audio: rab_init (DRC bridge) failed\n");
 diff --git a/runner/audio/event_queue.c b/runner/audio/event_queue.c
-index f22e787..3ec1267 100644
+index 44819fe..9647695 100644
 --- a/runner/audio/event_queue.c
 +++ b/runner/audio/event_queue.c
-@@ -121,6 +121,8 @@ int audio_event_cosim_hist(uint64_t *out_idx, uint32_t *out_stamp, uint32_t *out
+@@ -132,6 +132,8 @@ int audio_event_cosim_hist(uint64_t *out_idx, uint32_t *out_stamp, uint32_t *out
  }
  #endif /* GENESIS_COSIM */
  
@@ -519,7 +518,7 @@ index 1290d52..1c0d9ee 100644
          }
          g_cpu.PC = next & 0xFFFFFFu;
 diff --git a/runner/main.c b/runner/main.c
-index 3dc3c96..d0d9bf4 100644
+index 90a8929..2ab0acb 100644
 --- a/runner/main.c
 +++ b/runner/main.c
 @@ -937,6 +937,7 @@ static int      s_sampling_netplay_local = 0;
@@ -551,7 +550,7 @@ index 3dc3c96..d0d9bf4 100644
      for (int p = 0; p < GENESIS_SIM_MAX_PLAYERS; p++)
          if (input_player_connected(p) || input_script_player_used(p))
              in->human_mask |= 1u << p;
-@@ -1709,10 +1724,33 @@ static int runner_dump_vram_file(const char *path)
+@@ -1710,10 +1725,33 @@ static int runner_dump_vram_file(const char *path)
      return ok;
  }
  
@@ -585,7 +584,7 @@ index 3dc3c96..d0d9bf4 100644
      int ok = png_write_argb(resolved, s_framebuf,
                              s_screen_width, s_screen_height,
                              MAX_SCREEN_WIDTH) == 0;
-@@ -1775,6 +1813,82 @@ static void check_ramdump(void)
+@@ -1776,6 +1814,82 @@ static void check_ramdump(void)
  #endif
  }
  
@@ -668,7 +667,7 @@ index 3dc3c96..d0d9bf4 100644
  static void write_framelog(uint32_t frame)
  {
      if (!s_framelog_file) return;
-@@ -2650,6 +2764,14 @@ int main(int argc, char *argv[])
+@@ -2652,6 +2766,14 @@ int main(int argc, char *argv[])
              hash_on_mode = 1;
          } else if (strcmp(argv[i], "--input-script") == 0 && i + 1 < argc) {
              input_script_path = argv[++i];
@@ -683,7 +682,7 @@ index 3dc3c96..d0d9bf4 100644
          } else if (strcmp(argv[i], "--exec-coverage-out") == 0 && i + 1 < argc) {
              exec_cov_out = argv[++i];
          } else if (strcmp(argv[i], "--yield-log") == 0) {
-@@ -3063,7 +3185,9 @@ int main(int argc, char *argv[])
+@@ -3065,7 +3187,9 @@ int main(int argc, char *argv[])
          win_h = win_w * WS_ASPECT_H / WS_ASPECT_W;   /* true 16:9 */
      }
      /* Scripted launcher tests must stay hidden after the handoff to gameplay. */
@@ -694,7 +693,7 @@ index 3dc3c96..d0d9bf4 100644
      Uint32 win_flags = ((benchmark_frames || test_hidden) ? SDL_WINDOW_HIDDEN : SDL_WINDOW_SHOWN)
                       | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
      /* Launcher tri-state: 1 = borderless (desktop resolution, letterboxed by
-@@ -3891,6 +4015,11 @@ session_begin:;
+@@ -3894,6 +4018,11 @@ session_begin:;
             * every tick; the run must end on the undigested run's machine. */
            if (completed && s_digest_every) { GenesisRbDigest dd; genesis_rb_digest(&dd); }
            FRAME_PHASE(1);
@@ -706,7 +705,7 @@ index 3dc3c96..d0d9bf4 100644
            s_screen_width = game_video_output_width(&s_video_frame, gvdp_active_width(&g_machine.vdp));
            /* Output height doubles in interlace mode 2 (S2 2P split-screen);
             * the existing interlace display modes (tv squash / raw) take over
-@@ -3971,6 +4100,9 @@ session_begin:;
+@@ -3974,6 +4103,9 @@ session_begin:;
  
  
          /* --framelog: works in ALL build modes */
@@ -716,7 +715,7 @@ index 3dc3c96..d0d9bf4 100644
          write_framelog(frame_num);
  
          /* [SND-TRACE] headless auto-dump: when --snd-dump-frame N is set, dump
-@@ -4609,6 +4741,14 @@ session_begin:;
+@@ -4613,6 +4745,14 @@ session_begin:;
          return 1;
      }
      glue_shutdown();
@@ -731,21 +730,6 @@ index 3dc3c96..d0d9bf4 100644
      audio_close();
      shadow_worker_cleanup();
      genesis_hd_gpu_destroy(hd_gpu);
-diff --git a/runner/rb_state.c b/runner/rb_state.c
-index 7294574..2306f92 100644
---- a/runner/rb_state.c
-+++ b/runner/rb_state.c
-@@ -41,8 +41,8 @@ _Static_assert(sizeof(g_ram) == 0x10000, "work RAM size changed");
- #if UINTPTR_MAX == 0xFFFFFFFFFFFFFFFFu
- /* 64-bit layouts (the host pointers inside are scrubbed by machine_rb_save). */
- _Static_assert(sizeof(GVDP) == 65824, "GVDP changed: review machine_rb_save (pointers) and rb_state");
--_Static_assert(sizeof(GenesisBus) == 24664, "GenesisBus changed: review machine_rb_save and rb_state");
--_Static_assert(sizeof(GenesisMachine) == 90576, "GenesisMachine changed: review machine_rb_save and rb_state");
-+_Static_assert(sizeof(GenesisBus) == 24688, "GenesisBus changed: review machine_rb_save and rb_state");
-+_Static_assert(sizeof(GenesisMachine) == 90600, "GenesisMachine changed: review machine_rb_save and rb_state");
- #endif
- 
- /* ---- sections ---------------------------------------------------------------- */
 diff --git a/runner/sim_step.c b/runner/sim_step.c
 index 5b530a1..33a15ed 100644
 --- a/runner/sim_step.c
@@ -839,7 +823,7 @@ index 5b530a1..33a15ed 100644
      return 1;
  }
 diff --git a/runner/video/genesis_bus.c b/runner/video/genesis_bus.c
-index d0e1647..62d9c3b 100644
+index bd712d9..378b0b0 100644
 --- a/runner/video/genesis_bus.c
 +++ b/runner/video/genesis_bus.c
 @@ -7,6 +7,36 @@
@@ -879,208 +863,48 @@ index d0e1647..62d9c3b 100644
  #include "genesis_expansion.h"
  #include "../audio/event_queue.h"
  #include <string.h>
-@@ -93,6 +123,12 @@ extern void glue_charge_68k_stall(uint32_t cycles);
-  * needed by supported software. */
- #define MASTER_CYCLES_PER_FRAME  (262ull * 3420ull)
- #define YM_TIMER_B_MASTER_TICK   (16ull * 144ull * 7ull)
-+#define YM_TIMER_A_MASTER_TICK   (144ull * 7ull)
-+
-+/* The YM2612 timer overflow raises an IRQ to the Z80 when its enable bit is set.
-+ * Without it a polling driver sees a flag far later than the hardware interrupt and
-+ * can miss ticks (music races / desyncs). */
-+extern void ym_raise_z80_irq(void);
- 
- static uint64_t ym_abs_z80_stamp(void)
- {
-@@ -106,20 +142,93 @@ static uint64_t ym_abs_68k_stamp(void)
-            (uint64_t)STAMP_68K();
- }
- 
-+static uint64_t ym_timer_a_period(const GenesisBus *b)
-+{
-+    unsigned ta = ((unsigned)b->ym_timer_a_hi << 2) | ((unsigned)b->ym_timer_a_lo & 3u);
-+    uint64_t p = (uint64_t)(1024u - ta) * YM_TIMER_A_MASTER_TICK;
-+    /* Diagnostic scale for the PCM tick rate (percent). The reference capture
-+     * implies the drums should run at 10080 cycles where we use 7056. */
-+    static int scale = -1;
-+    if (scale < 0) { const char *e = getenv("GENESIS_YM_TA_SCALE");
-+                     scale = (e && *e) ? atoi(e) : 100;
-+                     if (scale < 50 || scale > 400) scale = 100; }
-+    if (scale != 100 && p < 20000u) p = p * (uint64_t)scale / 100u;
-+    /* Diagnostic: the drum pattern runs at 7056 where the reference implies the
-+     * driver's other rate (10080). Remap only that value so the voice samples
-+     * keep their own programmed rates. */
-+    { static int drum_fix = -1;
-+      if (drum_fix < 0) { const char *e = getenv("GENESIS_YM_DRUM_FIX");
-+                          drum_fix = (e && *e && *e != '0'); }
-+      if (drum_fix && p == 7056u) p = 10080u; }
-+    /* Diagnostic: halve the drum stream's rate only (the long continuous burst),
-+     * leaving short voice samples at their programmed rate. */
-+    { static int drum_half = -1;
-+      if (drum_half < 0) { const char *e = getenv("GENESIS_YM_DRUM_HALF");
-+                           drum_half = (e && *e && *e != '0'); }
-+      if (drum_half && g_ym_drum_stream && p < 20000u) p *= 2u; }
-+    return p;
-+}
-+
-+
-+/* The driver's interrupt handler at $0038 is entered for any Z80 IRQ. Raising the
-+ * FM timer interrupt made tempo scale with the timer rate, so it is off unless
-+ * GENESIS_YM_TIMER_IRQ=1 explicitly enables it. The status flag is still set, which
-+ * is what a polling driver uses. */
-+static int ym_timer_irq_enabled(void)
-+{
-+    static int on = -1;
-+    if (on < 0) { const char *e = getenv("GENESIS_YM_TIMER_IRQ");
-+                  /* OFF by default: this driver counts every interrupt as a
-+                   * sequencer tick, so delivering hardware-rate timer IRQs
-+                   * during PCM makes the drum pattern race and end early.
-+                   * The status flag still updates, which is what the driver
-+                   * polls to pace DAC bytes. GENESIS_YM_TIMER_IRQ=1 restores
-+                   * interrupt delivery for comparison. */
-+                  on = (e && *e && *e != '0'); }
-+    return on;
-+}
-+
+@@ -118,8 +148,10 @@ static uint64_t ym_timer_a_period(const GenesisBus *b)
  static void ym_timer_update(GenesisBus *b, uint64_t now)
  {
-+    /* Timer A (the one Shadowrun's driver uses for its sequencer). */
-+    if (b->ym_timer_a_running && b->ym_timer_a_period != 0) {
-+        /* Deliver EVERY elapsed period, one interrupt each, so a driver counting
-+         * ticks sees the rate the chip produces instead of one collapsed event. */
-+        unsigned guard = 0;
-+        while (now >= b->ym_timer_a_deadline && guard++ < 16u) {
-+            b->ym_status |= 0x01u;      /* the flag sets on overflow regardless */
-+            g_ym_ta_fires++;
-+            if ((b->ym_mode & 0x04u) && ym_timer_irq_enabled() && g_ym_pcm_active) {
-+                static unsigned div_phase = 0;
-+                ym_irq_div_init();
-+                if (g_ym_irq_div <= 1 || ++div_phase >= g_ym_irq_div) {
-+                    div_phase = 0;
-+                    g_ym_irq_count++; ym_raise_z80_irq();
-+                } }
-+            b->ym_timer_a_deadline += b->ym_timer_a_period;
-+        }
-+        if (guard >= 16u) {             /* fell far behind: snap to now */
-+            b->ym_timer_a_deadline = now + b->ym_timer_a_period;
-+        }
-+    }
-+
-     if (!b->ym_timer_b_running || b->ym_timer_b_period == 0 ||
-         now < b->ym_timer_b_deadline)
-         return;
+     if (b->ym_timer_a_running && now >= b->ym_timer_a_deadline) {
+-        if (b->ym_mode & 0x04u)         /* enable timer-A overflow flag */
+-            b->ym_status |= 0x01u;
++        /* The status flag is raised on overflow regardless of the enable bit:
++         * this driver polls it to pace DAC bytes with $27 bit 2 clear during
++         * music, and gating it there starves that poll. */
++        b->ym_status |= 0x01u;
+         /* Overflow reloads from the register latch. A write to the latch
+          * while running leaves the current deadline in place. */
+         uint64_t period = ym_timer_a_period(b);
+@@ -141,6 +173,12 @@ static void ym_timer_update(GenesisBus *b, uint64_t now)
+     b->ym_timer_b_deadline += periods * b->ym_timer_b_period;
+ }
  
--    if (b->ym_mode & 0x08u)             /* enable timer-B overflow flag */
--        b->ym_status |= 0x02u;
-+    { unsigned guard = 0;
-+      while (now >= b->ym_timer_b_deadline && guard++ < 16u) {
-+          b->ym_status |= 0x02u;        /* the flag sets on overflow regardless */
-+          if ((b->ym_mode & 0x08u) && ym_timer_irq_enabled()) ym_raise_z80_irq();
-+          b->ym_timer_b_deadline += b->ym_timer_b_period;
-+      }
-+      if (guard >= 16u) b->ym_timer_b_deadline = now + b->ym_timer_b_period; }
-+}
-+
- 
--    /* Timer B is periodic while load/enable bit 1 remains set. Advance the
--     * deadline past 'now' without an unbounded catch-up loop. */
--    uint64_t elapsed = now - b->ym_timer_b_deadline;
--    uint64_t periods = elapsed / b->ym_timer_b_period + 1u;
--    b->ym_timer_b_deadline += periods * b->ym_timer_b_period;
++/* Per-scanline timer advance used by the scheduler (declared in the header). */
 +void gbus_ym_timer_service(GenesisBus *b, uint64_t now)
 +{
 +    ym_timer_update(b, now);
- }
- 
++}
++
  static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
-@@ -131,10 +240,60 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
-         b->ym_addr[bank] = val;
-         return;
-     }
--    if (bank != 0) return;              /* timers live in register bank 0 */
--
--    uint8_t reg = b->ym_addr[0];
--    if (reg == 0x26u) {
-+    /* The OPN register file is shared by both ports: the part-1 latch addresses
-+     * the same registers, so timer/DAC control written through port 1 must be
-+     * honoured too (Shadowrun's driver programs the DAC/timer via $4002/$4003). */
-+    uint8_t reg = b->ym_addr[bank];
-+    { static int yl = -1;
-+      if (yl < 0) { const char *e = getenv("GENESIS_YMREG_LOG"); yl = (e && *e && *e != '0'); }
-+      { /* Hardware sets status BUSY (bit 7) for a short time after a write; the
-+       * driver's wait loops poll it. */
-+      static int busy_len = -1;
-+      if (busy_len < 0) { const char *e = getenv("GENESIS_YM_BUSY");
-+                          busy_len = (e && *e) ? atoi(e) : 0;   /* off unless asked */
-+                          if (busy_len < 0 || busy_len > 100000) busy_len = 0; }
-+      if (busy_len) g_ym_busy_until = ym_abs_z80_stamp() + (uint64_t)busy_len; }
-+    if (reg == 0x28u) {
-+        static int keylog = -1, mute6 = -1;
-+        if (keylog < 0) { const char *e = getenv("GENESIS_KEYON_LOG");
-+                          keylog = (e && *e && *e != '0');
-+                          e = getenv("GENESIS_MUTE_CH6");
-+                          mute6 = (e && *e && *e != '0'); }
-+        { static int mute1 = -1;
-+          if (mute1 < 0) { const char *e = getenv("GENESIS_MUTE_CH1");
-+                           mute1 = (e && *e && *e != '0'); }
-+          if (mute1 && (val & 7u) == 1u) return; }
-+        if (mute6 && (val & 7u) == 6u) return;
-+        if (keylog) {
-+            extern unsigned long g_snd_frame;
-+            fprintf(stderr, "[KEYON] f=%lu val=%02X pc=%04X\n", g_snd_frame, val,
-+                    (unsigned)(machine_z80_pc() & 0xFFFFu)); fflush(stderr);
-+        }
-+    }
-+    if (reg == 0x2Au) {
-+        static int mute = -1;
-+        if (mute < 0) { const char *e = getenv("GENESIS_MUTE_DAC"); mute = (e && *e && *e != '0'); }
-+        g_ym_dac_writes++; g_ym_pcm_active = 1;
-+        if (mute) return;   /* diagnostic: drop DAC writes entirely */
-+    }
-+      if (reg == 0x2Bu) { extern unsigned long g_snd_frame;
-+        static int dl = -1;
-+        if (dl < 0) { const char *e = getenv("GENESIS_DAC_LOG"); dl = (e && *e && *e != '0'); }
-+        if (dl) fprintf(stderr, "[DACEN] f=%lu val=%02X dac_bit=%d\n", g_snd_frame, val, (val>>7)&1);
-+        if (val & 0x80u) g_ym_dac_writes |= 0x80000000ul; }
-+      if (reg == 0x28u) { extern unsigned long g_snd_frame;
-+        static int ykey = -1;
-+        if (ykey < 0) { const char *e = getenv("GENESIS_YKEY_LOG"); ykey = (e && *e && *e != '0'); }
-+        g_ym_writes++;
-+        if ((val & 0xF0u) == 0x00u || (val & 0x30u) == 0x30u) { g_ym_keyons++;
-+          if (ykey) fprintf(stderr, "[YKEY] f=%lu val=%02X\n", g_snd_frame, val); } }
-+      if (yl && (reg == 0x26u || reg == 0x27u || reg == 0x24u || reg == 0x25u))
-+          fprintf(stderr, "[YMREG] f=%lu reg=%02X val=%02X\n", g_snd_frame, reg, val); }
-+    if (reg == 0x24u) {
-+        b->ym_timer_a_hi = val;
-+    } else if (reg == 0x25u) {
-+        b->ym_timer_a_lo = val & 0x03u;
-+    } else if (reg == 0x26u) {
-         b->ym_timer_b = val;
-         b->ym_timer_b_period =
-             (uint64_t)(256u - (unsigned)val) * YM_TIMER_B_MASTER_TICK;
-@@ -145,6 +304,29 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
+                                  uint64_t now)
+ {
+@@ -168,10 +206,18 @@ static void ym_write_side_effect(GenesisBus *b, uint8_t port, uint8_t val,
          if (val & 0x10u) b->ym_status &= 0xfeu;
          if (val & 0x20u) b->ym_status &= 0xfdu;
          b->ym_mode = val;
-+        if (val & 0x01u) {                  /* bit 0: load/run timer A */
-+            /* Loading starts a stopped timer. A flag reset (bit 4) written with
-+             * the load restarts a running timer so a newly programmed $24/$25
-+             * period takes effect (Shadowrun re-arms timer A at 7.6 kHz when it
-+             * starts PCM); a plain acknowledgement preserves the phase. */
-+            uint64_t newp = ym_timer_a_period(b);
-+            { static int tl = -1;
-+              if (tl < 0) { const char *e = getenv("GENESIS_YMTA_LOG"); tl = (e && *e && *e != '0'); }
-+              if (tl) { extern unsigned long g_snd_frame;
-+                        fprintf(stderr, "[YMTA] f=%lu hi=%02X lo=%02X newp=%lu cur=%lu run=%d bit4=%d\n",
-+                                g_snd_frame, b->ym_timer_a_hi, b->ym_timer_a_lo,
-+                                (unsigned long)newp, (unsigned long)b->ym_timer_a_period,
-+                                (int)b->ym_timer_a_running, (val & 0x10u) ? 1 : 0); } }
-+            if (!b->ym_timer_a_running || (val & 0x10u) ||
-+                newp != b->ym_timer_a_period) {
-+                b->ym_timer_a_period = newp;
-+                g_ym_ta_period = (unsigned long)newp;
-+                b->ym_timer_a_deadline = now + newp;
-+            }
+-        /* The load edge starts A. A flag clear while loaded keeps its phase. */
+-        if ((val & 0x01u) && !b->ym_timer_a_running)
+-            b->ym_timer_a_deadline = now + ym_timer_a_period(b);
+-        b->ym_timer_a_running = val & 0x01u;
++        /* The load edge starts A. A plain flag acknowledgement that leaves the
++         * timer loaded keeps its phase, but a load that also resets the flag
++         * (drivers write $27 = $55 when they re-program $24/$25 for streaming)
++         * adopts the new period immediately instead of waiting for the old
++         * deadline to expire. */
++        if (val & 0x01u) {
++            if (!b->ym_timer_a_running || (val & 0x10u))
++                b->ym_timer_a_deadline = now + ym_timer_a_period(b);
 +            b->ym_timer_a_running = 1;
 +        } else {
 +            b->ym_timer_a_running = 0;
@@ -1088,7 +912,7 @@ index d0e1647..62d9c3b 100644
          if (val & 0x02u) {
              /* Loading starts a stopped timer. A flag acknowledgement that
               * leaves it loaded must preserve the running timer's phase. */
-@@ -358,6 +540,7 @@ uint16_t gbus_read16(GenesisBus *b, uint32_t a)
+@@ -385,6 +431,7 @@ uint16_t gbus_read16(GenesisBus *b, uint32_t a)
               * driver decompression's back-reference copy (MOVE.B (A4,D4.W),
               * (A5)+) — the S2 silent-audio bug. */
              unsigned off = a & 0x1FFFu;
@@ -1096,7 +920,7 @@ index d0e1647..62d9c3b 100644
              return (uint16_t)(((uint16_t)b->z80_ram[off] << 8)
                                | b->z80_ram[(off + 1u) & 0x1FFFu]);
          }
-@@ -419,15 +602,50 @@ uint8_t gbus_peek8(const GenesisBus *b, uint32_t a)
+@@ -446,15 +493,50 @@ uint8_t gbus_peek8(const GenesisBus *b, uint32_t a)
  {
      a &= 0xFFFFFFu;
      if (a >= 0xA00000u && a < 0xA10000u && (a & 0xFFFFu) < 0x2000u)
@@ -1148,7 +972,7 @@ index d0e1647..62d9c3b 100644
      a &= 0xFFFFFFu;
      if (a >= 0xFF0000u) {                                            /* RAM     */
          uint16_t o = (uint16_t)(a & 0xFFFFu);
-@@ -460,7 +678,7 @@ void gbus_write16(GenesisBus *b, uint32_t a, uint16_t v)
+@@ -487,7 +569,7 @@ void gbus_write16(GenesisBus *b, uint32_t a, uint16_t v)
          if ((a & 0xFFFFu) < 0x2000u) { unsigned off = a & 0x1FFFu;
              snd_trace_68k_write((uint16_t)off, b->z80_ram[off], (uint8_t)(v >> 8),
                                  b->z80_busreq, b->z80_reset_off);  /* [SND-TRACE] */
@@ -1157,7 +981,7 @@ index d0e1647..62d9c3b 100644
          if (a >= 0xA04000u && a <= 0xA04003u) {
              uint8_t port = (uint8_t)(a & 3);
              ym_write_side_effect(b, port, (uint8_t)v, ym_abs_68k_stamp());
-@@ -503,6 +721,8 @@ uint8_t gbus_read8(GenesisBus *b, uint32_t a)
+@@ -530,6 +612,8 @@ uint8_t gbus_read8(GenesisBus *b, uint32_t a)
  
  void gbus_write8(GenesisBus *b, uint32_t a, uint8_t v)
  {
@@ -1166,7 +990,7 @@ index d0e1647..62d9c3b 100644
      a &= 0xFFFFFFu;
      uint8_t *extra_ram = expansion_ram_at(a, 1);
      if (extra_ram) { *extra_ram = v; return; }
-@@ -512,7 +732,7 @@ void gbus_write8(GenesisBus *b, uint32_t a, uint8_t v)
+@@ -539,7 +623,7 @@ void gbus_write8(GenesisBus *b, uint32_t a, uint8_t v)
          if ((a & 0xFFFFu) < 0x2000u) { unsigned off = a & 0x1FFFu;
              snd_trace_68k_write((uint16_t)off, b->z80_ram[off], v,
                                  b->z80_busreq, b->z80_reset_off);  /* [SND-TRACE] */
@@ -1175,7 +999,7 @@ index d0e1647..62d9c3b 100644
          if (a >= 0xA04000u && a <= 0xA04003u) {
              uint8_t port = (uint8_t)(a & 3);
              ym_write_side_effect(b, port, v, ym_abs_68k_stamp());
-@@ -534,23 +754,92 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
+@@ -561,23 +645,92 @@ uint8_t gbus_z80_read(GenesisBus *b, uint16_t addr)
      /* YM2612 status: BUSY is clear; timer flags advance on scheduler time. */
      if (addr < 0x6000u) {
          ym_timer_update(b, ym_abs_z80_stamp());
@@ -1269,7 +1093,7 @@ index d0e1647..62d9c3b 100644
          if (port & 1u)
              audio_event_push_latched(machine_z80_stamp(), port,
                                       b->ym_addr[port >> 1], val);
-@@ -560,9 +849,22 @@ void gbus_z80_write(GenesisBus *b, uint16_t addr, uint8_t val)
+@@ -587,9 +740,22 @@ void gbus_z80_write(GenesisBus *b, uint16_t addr, uint8_t val)
      } /* FM */
      if (addr < 0x6100u) {                                /* $6000 bank register   */
          b->z80_bank = ((b->z80_bank >> 1) | ((val & 1) << 8)) & 0x1FF;
@@ -1294,29 +1118,17 @@ index d0e1647..62d9c3b 100644
          uint32_t a68 = ((uint32_t)b->z80_bank << 15) + (uint32_t)(addr - 0x8000u);
          gbus_write8(b, a68, val);
 diff --git a/runner/video/genesis_bus.h b/runner/video/genesis_bus.h
-index 242774c..bb12a64 100644
+index 0054723..77944ec 100644
 --- a/runner/video/genesis_bus.h
 +++ b/runner/video/genesis_bus.h
-@@ -49,6 +49,11 @@ typedef struct GenesisBus {
-     uint8_t  ym_timer_b_running;
-     uint64_t ym_timer_b_deadline;       /* absolute scheduler master cycles    */
-     uint64_t ym_timer_b_period;         /* cached period in master cycles      */
-+    uint8_t  ym_timer_a_hi;             /* register $24 (timer A high 8 bits)  */
-+    uint8_t  ym_timer_a_lo;             /* register $25 (timer A low 2 bits)   */
-+    uint8_t  ym_timer_a_running;
-+    uint64_t ym_timer_a_deadline;       /* absolute scheduler master cycles    */
-+    uint64_t ym_timer_a_period;         /* cached period in master cycles      */
- 
-     /* Controllers / I-O. */
-     uint16_t pad[2];                    /* live button state (GPAD_* bits, 12) */
-@@ -161,4 +166,5 @@ void     gbus_z80_write(GenesisBus *b, uint16_t addr, uint8_t val);
+@@ -165,4 +165,5 @@ void     gbus_z80_write(GenesisBus *b, uint16_t addr, uint8_t val);
  uint8_t *gbus_sram_buffer(GenesisBus *b);
  uint32_t gbus_sram_size(const GenesisBus *b);
  
 +void gbus_ym_timer_service(GenesisBus *b, uint64_t now);
  #endif /* GENESIS_BUS_H */
 diff --git a/runner/video/genesis_machine.c b/runner/video/genesis_machine.c
-index bfbe22d..8021783 100644
+index c0eaced..0bf58e4 100644
 --- a/runner/video/genesis_machine.c
 +++ b/runner/video/genesis_machine.c
 @@ -14,7 +14,9 @@

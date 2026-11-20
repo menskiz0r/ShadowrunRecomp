@@ -2520,3 +2520,32 @@ same path (`$00B316`, `$00DB26`, `$00F2E2`, `$01E9C0`, `$01EAB4`, `$01EB32`, `$0
 With the path fully recompiled, the dialogue opens at frame ~12750 (portrait, text, A/B/C
 options) with the engine's `floor_enabled()` gate untouched - the speculative fallback was
 reverted. The gameplay requirement remains: user verification in a live session.
+
+### 2026-11-20: engine pin moved to the merged timer-A commit
+
+The engine is now pinned to `9cbfe88` (the merge of PR #83), so timer A is upstream code
+instead of a local patch.
+
+The merge simplified two behaviours this port depends on, both restored locally:
+
+1. **Reload while running.** The merged handler only starts timer A when it is stopped
+   (`if ((val & 0x01) && !running) deadline = now + period`). The driver re-programs `$24`/
+   `$25` for PCM streaming with `$27 = $55` while the timer runs, so the new period was
+   ignored until the old deadline expired. Restored: a load that also sets the reset bit
+   restarts from the new period; a plain acknowledgement keeps the phase.
+2. **Overflow flag gating.** The merged model raises the status flag only when `$27` bit 2
+   is set. This driver polls the flag to pace DAC bytes with bit 2 clear during music, so
+   gating it starves the poll. Restored: the flag is raised on overflow unconditionally.
+
+Measured with the scripted route (4000 frames, same inputs), drum-band onsets per run:
+
+```
+                        kick   snare   hats
+pre-merge (local timer)  1195    567     718
+merged as-is              960    309     722
+merged + both restores   1150    511     717
+```
+
+i.e. the merge alone loses ~20% of kick and ~45% of snare onsets; after restoring the two
+behaviours the run matches the validated build within detector noise and identical duration
+(66.7 s vs 67.0 s). Live audio confirmation is still required.
