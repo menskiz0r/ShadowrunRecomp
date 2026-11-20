@@ -2499,3 +2499,24 @@ the return address - but it sits behind `GENESIS_FLOOR`, which is off for this p
 Change: run that capsule for interior-label misses even with the global floor off
 (`GENESIS_INTERIOR_FLOOR=0` disables). Non-interior misses keep the previous no-op
 behaviour. Boot smoke: 1800 frames clean, no declined capsules.
+
+### 2026-11-20: bar-NPC dialogue fixed by discovery, not by a runtime fallback
+
+The runtime capsule (2026-11-19 entry) made the dialogue work, but upstream review showed the
+predicate behind it (`is_interior_label`) is a gap heuristic: it treats every address between
+two dispatch entries as runnable code, so a wrong target executes speculatively, and a
+declined execution restores only `g_cpu` - guest RAM writes survive. Not acceptable upstream.
+
+Proper fix: the two targets are reached through *absolute pointers* stored in the data tables
+at ROM `$00B88C` (`$020990`) and `$00ECF2` (`$021174`), so they are real entry points the
+recompiler never discovered. They are now listed in `[functions] late_extra` and emitted as
+generated functions (`func_020990`, `func_021174` in the dispatch table).
+
+Replaying the recorded session with those compiled surfaced 8 more interior targets on the
+same path (`$00B316`, `$00DB26`, `$00F2E2`, `$01E9C0`, `$01EAB4`, `$01EB32`, `$01EF2C`,
+`$01EA94`); adding them iteratively (build -> replay -> collect misses) ends with a full
+13892-frame replay that reports **no dispatch misses at all**.
+
+With the path fully recompiled, the dialogue opens at frame ~12750 (portrait, text, A/B/C
+options) with the engine's `floor_enabled()` gate untouched - the speculative fallback was
+reverted. The gameplay requirement remains: user verification in a live session.

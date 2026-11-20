@@ -1,4 +1,4 @@
-# game.toml — Shadowrun (Sega Genesis / Mega Drive, 1994, US retail).
+# game.toml Ã¢â‚¬â€ Shadowrun (Sega Genesis / Mega Drive, 1994, US retail).
 # Modeled on the framework's puyo/game.toml (non-Sonic, no in-tree disassembly).
 #
 # ROM identity: 2 MB, header "SHADOWRUN", serial GM MK-1352 -00, region "U",
@@ -36,7 +36,14 @@ level_modes    = []
 # Computed jumps into the MIDDLE of an existing function (discovered from play:
 # interior_label_misses.toml). Emitted as in-function entry points, never as
 # separate function seeds (that splits the parent).
-late_extra = [0x00B3EE, 0x014E0A, 0x00AC4E, 0x00B49C, 0x00B07E, 0x00B38A,
+late_extra = [
+               # bar-NPC dialogue handlers: absolute pointers stored in the data
+               # tables at $B88C / $ECF2, so the recompiler never saw them as
+               # entries and the dialogue aborted right after the fade.
+               0x020990, 0x021174,
+               0x01EA94,
+               0x00B316, 0x00DB26, 0x00F2E2, 0x01E9C0, 0x01EAB4, 0x01EB32, 0x01EF2C,
+               0x00B3EE, 0x014E0A, 0x00AC4E, 0x00B49C, 0x00B07E, 0x00B38A,
                # intro text plots: blocks after a `jmp $c0da`, reached only by
                # computed jump (reported as interior-label misses at $05AEC6,
                # $05AEDA, $05AEEE). $05B378 is the CRAM/VRAM setup reached the same way.
