@@ -11,6 +11,11 @@ recompilation: the original 68000 code is translated to C and run against a
 Genesis runtime, so the game executes as native code with no emulator in the
 loop.
 
+![ShadowrunRecomp-Extended](assets/shadowrun-extended.webp)
+
+*ShadowrunRecomp-Extended: the four-class archetype selection added by the
+`port/four-classes` branch - Samurai, Decker, Shaman and Mage.*
+
 Built on [**segagenesisrecomp**](https://github.com/mstan/segagenesisrecomp) by
 [**Matthew Stanley (mstan)**](https://github.com/mstan) — the recompiler, the
 Genesis runtime, the audio path and the SDL front-end are his work, used here as
