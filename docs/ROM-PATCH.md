@@ -29,6 +29,17 @@ Apply it with any IPS patcher (flips, Lunar IPS, RomPatcher.js, or the patch
 function of most front-ends). The patch only rewrites existing bytes, so the
 result stays at 2 MB and the `.gen` extension remains valid.
 
+Or let the repository do it, hash-checked at both ends:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\apply-rom-patch.ps1 -Rom "D:\roms\Shadowrun (USA).gen"
+```
+
+The helper reads the stock dump (CRC32 `FBB92909`), applies the records above,
+rejects any other input image, and writes `game/shadowrun.bin`, so the manual
+copy step disappears. `-Out` changes the destination and `-Patch` an alternative
+IPS file.
+
 Verification after patching:
 
 - CRC32 is `93B0D845`

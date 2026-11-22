@@ -51,8 +51,16 @@ and it adds a host-side spell filter for the Mage.
 | Details | offsets, class table and spell rules in [docs/ROM-PATCH.md](docs/ROM-PATCH.md) |
 
 The branch's `game/shadowrun_spec.c` pins the patched CRC32, so a stock image is
-rejected by the runner. Apply the IPS patch first, then place the result at
-`game/shadowrun.bin` as usual.
+rejected by the runner. Point the helper at your own USA dump and it applies the
+IPS patch, checks both hashes and writes the image the runner expects:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\apply-rom-patch.ps1 -Rom "D:\roms\Shadowrun (USA).gen"
+```
+
+The result lands at `game/shadowrun.bin`; override the destination with `-Out`.
+Re-running it on an already patched image is safe, and any image other than the
+two known dumps is rejected before a byte is written.
 
 ## Build
 
