@@ -67,8 +67,58 @@ static void shadowrun_call_entry_point(void)
     uint32_t pc = m68k_read32(4) & 0xFFFFFFu;   /* reset vector, as the harness does */
     recomp_call_addr(pc);
 }
+static int shadowrun_is_shaman_spell(uint8_t spell_id)
+{
+    return spell_id <= 0x05u || spell_id == 0x0Cu || spell_id == 0x0Du;
+}
+
+static int shadowrun_is_shaman_focus(uint8_t item_id)
+{
+    return (item_id >= 0x19u && item_id <= 0x1Eu) || item_id == 0x25u || item_id == 0x26u;
+}
+
+static void shadowrun_apply_mage_start(void)
+{
+    uint32_t character = m68k_read32(0x00FFFC04) & 0xFFFFFFu;
+    if (character < 0xFF0000u) return;
+    if (m68k_read8(character + 0x9Bu) != 0x00u) return;
+    uint8_t spells[28];
+    int spell_count = 0;
+    int stored_count = m68k_read8(0x00FF1EFB) + 1;
+    if (stored_count > 14) stored_count = 14;
+    for (int index = 0; index < stored_count; index++) {
+        uint8_t spell_id = m68k_read8(0x00FF1EFC + index * 2);
+        uint8_t spell_level = m68k_read8(0x00FF1EFD + index * 2);
+        if (spell_id == 0x7Fu) continue;
+        if (shadowrun_is_shaman_spell(spell_id)) continue;
+        spells[spell_count * 2] = spell_id;
+        spells[spell_count * 2 + 1] = spell_level;
+        spell_count++;
+    }
+    if (spell_count == 0) {
+        spells[0] = 0x07u;
+        spells[1] = 0x04u;
+        spell_count = 1;
+    }
+    m68k_write8(0x00FF1EFB, (uint8_t)(spell_count - 1));
+    for (int index = 0; index < 14; index++) {
+        if (index < spell_count) {
+            m68k_write8(0x00FF1EFC + index * 2, spells[index * 2]);
+            m68k_write8(0x00FF1EFD + index * 2, spells[index * 2 + 1]);
+        } else {
+            m68k_write8(0x00FF1EFC + index * 2, 0x7Fu);
+            m68k_write8(0x00FF1EFD + index * 2, 0x7Fu);
+        }
+    }
+    for (int slot = 0; slot < 8; slot++) {
+        uint8_t item_id = m68k_read8(0x00FFF21B + slot);
+        if (shadowrun_is_shaman_focus(item_id))
+            m68k_write8(0x00FFF21B + slot, 0x00u);
+    }
+}
 static void shadowrun_call_vblank(void)
 {
+    shadowrun_apply_mage_start();
     uint32_t handler = m68k_read32(0x78) & 0xFFFFFFu;
     if (handler) recomp_call_addr(handler);
 }
@@ -86,7 +136,7 @@ const GameSpec g_game_spec = {
 
     /* Shadowrun (USA), 2 MB. Regional variants have different code and data
      * layouts and cannot share this recomp. */
-    .expected_rom_crc32     = 0xFBB92909u,
+    .expected_rom_crc32     = 0x93B0D845u,
     .expected_rom_size      = 0x200000u,
 
     /* Every computed-dispatch miss must be loud, not silently interpreted: the

@@ -1,8 +1,12 @@
 # game.toml Ã¢â‚¬â€ Shadowrun (Sega Genesis / Mega Drive, 1994, US retail).
 # Modeled on the framework's puyo/game.toml (non-Sonic, no in-tree disassembly).
 #
-# ROM identity: 2 MB, header "SHADOWRUN", serial GM MK-1352 -00, region "U",
-# CRC32 FBB92909, SHA-1 A06A281D39E845BFF446A541B2FF48E1D93143C2.
+# ROM identity: 2 MB, header "SHADOWRUN", serial GM MK-1352 -00, region "U".
+# Original USA dump: CRC32 FBB92909,
+#                    SHA-1 A06A281D39E845BFF446A541B2FF48E1D93143C2.
+# This branch builds against the four-class patched image: CRC32 93B0D845,
+# SHA-1 2F0FFB4C402972A183C936C17A10E9941123AC07, produced by applying
+# patches/rom/Shadowrun (USA) 1995 Four Classes.ips to the original dump.
 # Vectors: SSP $00FFFFF8, entry $000236.
 #   H-interrupt (IRQ4) $000228 -> JMP $001080
 #   V-interrupt (IRQ6) $00022E -> JMP $001070
@@ -22,7 +26,7 @@ jump_table_autodiscovery = true
 [ram_layout]
 # Cosmetic fields are unknown for this title and left at 0.
 game_mode      = 0x000000
-vint_runcount  = 0x00F9EC
+vint_runcount  = 0x00FFF9EC
 vint_routine   = 0x000000   # unknown for this title: 0 = always treat a wait as a real wait
 plc_pending    = 0x000000
 # Load-bearing: reset SSP from the vector table.
