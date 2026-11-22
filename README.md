@@ -17,8 +17,9 @@ Genesis runtime, the audio path and the SDL front-end are his work, used here as
 a submodule and credited in [`CREDITS.md`](CREDITS.md). Part of the R.A.I.D. /
 RetroPortingToolkit community.
 
-**You must supply your own ROM.** This repository contains no game code, no
-graphics, no audio and no save files.
+**You must supply your own ROM.** This repository contains no complete ROM, no
+graphics, no audio and no save files. The only ROM-derived data is the 184-byte
+byte-level patch in `patches/rom/`, which is not a playable image.
 
 ## What you need
 
@@ -28,6 +29,25 @@ graphics, no audio and no save files.
 | OS | Windows 10/11 x64 |
 | Toolchain | [w64devkit](https://github.com/skeeto/w64devkit) (GCC 16.2) |
 | Framework | [segagenesisrecomp](https://github.com/mstan/segagenesisrecomp) v0.1.2, pinned as a submodule |
+
+## Four-class modification
+
+`port/four-classes` is not a stock-port branch. It builds against a patched
+image (CRC32 `93B0D845`, SHA-1 `2F0FFB4C402972A183C936C17A10E9941123AC07`) that
+turns the original three-class selection into Samurai / Decker / Shaman / Mage,
+and it adds a host-side spell filter for the Mage.
+
+| | |
+|---|---|
+| Patch | `patches/rom/Shadowrun (USA) 1995 Four Classes.ips` (184 bytes, IPS) |
+| Apply to | the unpatched USA dump above; the patch changes 60 bytes and keeps the size |
+| Result | CRC32 `93B0D845`, checksum word at `0x18E` = `0xBE5C` |
+| Branches | changes live on `port/four-classes`; `main` stays on the upstream pin |
+| Details | offsets, class table and spell rules in [docs/ROM-PATCH.md](docs/ROM-PATCH.md) |
+
+The branch's `game/shadowrun_spec.c` pins the patched CRC32, so a stock image is
+rejected by the runner. Apply the IPS patch first, then place the result at
+`game/shadowrun.bin` as usual.
 
 ## Build
 
@@ -108,9 +128,10 @@ What this repository contains and does not contain:
 
 | | |
 |---|---|
-| Contains | a recompiler patch, a per-game adapter (`GameSpec`, host stubs), a build configuration, build/validation scripts and documentation |
-| Does **not** contain | the ROM, translated (generated) C, graphics, audio, save files, screenshots, or any prebuilt binary |
+| Contains | a recompiler patch, a ROM patch (`patches/rom/`), a per-game adapter (`GameSpec`, host stubs), a build configuration, build/validation scripts and documentation |
+| Does **not** contain | the complete ROM, translated (generated) C, graphics, audio, save files, screenshots, or any prebuilt binary |
 | `game/game.toml` | function addresses, seeds and dispatch facts measured from the ROM - configuration data, no code or expressive content |
+| `patches/rom/*.ips` | a binary difference against the ROM; it embeds the bytes it rewrites, so treat it exactly like the ROM |
 
 Static recompilation is, legally, a translation of someone else's program. That
 translation is created **on your machine, from the ROM you own**, when you run the
@@ -119,6 +140,8 @@ the derived work never gets distributed. For that reason:
 
 * **do not publish a compiled `ShadowrunRecomp.exe`** - it embeds translated game
   code and would be a derivative work being distributed;
+* do not publish the bundled `patches/rom/*.ips` outside this local copy - it
+  carries ROM-derived bytes;
 * do not add screenshots, audio captures, box art or save files to this repo;
 * if a rights holder objects, removing this repository removes everything derived
   from their work; there is nothing else to take down.

@@ -28,3 +28,13 @@ interior-label miss list, sound behaviour unchanged (FM thirds 6570/383/383).
 - `0005-instruction-trace.patch` - per-instruction `GEN_TRACE(pc, cycles)` emission in
   the recompiler, addressing every instruction site (used to compare the two backends).
 
+## ROM patch
+
+`rom/Shadowrun (USA) 1995 Four Classes.ips` is a binary IPS patch for the
+cartridge image, not a source patch. `scripts/apply-framework-patches.ps1` only
+globs `patches/*.patch`, so this file is never applied to the framework.
+
+The patch changes 60 bytes of the USA dump and produces the image the
+`port/four-classes` branch builds against (CRC32 `93B0D845`). Offsets and
+semantics are listed in [`docs/ROM-PATCH.md`](../docs/ROM-PATCH.md).
+
