@@ -1,7 +1,8 @@
 # genesis-mcp
 
 An MCP server that drives the running ShadowrunRecomp window: it presses Sega
-Genesis pad buttons and, next, reports the screen as text.
+Genesis pad buttons, returns real screenshots, and will describe the screen in
+text.
 
 It talks to the runner's own debug command server (line-delimited JSON over TCP),
 so no engine changes are needed.
@@ -11,11 +12,17 @@ so no engine changes are needed.
 | Tool | Arguments | Result |
 |---|---|---|
 | `press_button` | `button` (`up`, `down`, `left`, `right`, `a`, `b`, `c`, `start`), `duration_ms` (default `150`) | Holds the button, waits, releases, returns the frame span |
-| `read_state` | none | `State will be here` (placeholder) |
+| `screenshot` | none | The current screen as a PNG image (320x224) |
+| `read_state` | none | `State will be here` (placeholder for the description) |
 
 Button names are case-insensitive. `duration_ms` is bounded to 1..60000. The
 release is sent in a `finally` block, so an interrupted call does not leave a
 button stuck.
+
+`screenshot` asks the runner for a PNG capture and returns those bytes as MCP
+image content, so a client renders the real screen. The capture goes through
+`TemporaryDirectory`, so nothing is left on disk. `read_state` is reserved for a
+textual description and is still a placeholder.
 
 ## Setup
 
@@ -66,17 +73,23 @@ The oracle build listens on `4379`, so set `GENESIS_DEBUG_PORT=4379` to drive it
 
 ## Wire commands
 
-`press_button` sends `set_input` with the Genesis bit mask and later releases it:
+`press_button` sends `set_input` with the Genesis bit mask and later releases it;
+`screenshot` asks the runner to write the current framebuffer:
 
 | Command | Meaning |
 |---|---|
 | `{"cmd":"frame_info"}` | current wall frame, used for the reported span |
 | `{"cmd":"set_input","keys":"40"}` | hold A (`bit 6`) |
 | `{"cmd":"set_input","keys":"off"}` | release the TCP input source |
+| `{"cmd":"screenshot","path":"C:/…/screen.png"}` | write the current framebuffer |
 
 Bits: `up` 0x01, `down` 0x02, `left` 0x04, `right` 0x08, `b` 0x10, `c` 0x20,
 `a` 0x40, `start` 0x80. The runner merges this source with the live keyboard and
 gamepad instead of replacing them.
+
+Screenshot paths are sent with forward slashes: the runner's JSON reader copies
+string values verbatim, so an escaped `\\` would arrive as a literal doubled
+backslash and the write would fail.
 
 Each tool call opens its own connection and closes it afterwards, because the
 runner serves one client at a time.

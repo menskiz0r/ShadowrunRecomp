@@ -110,5 +110,8 @@ class GenesisDebugLink:
     def release(self) -> None:
         self.request({"cmd": "set_input", "keys": "off"})
 
+    def screenshot(self, path: str) -> None:
+        self.request({"cmd": "screenshot", "path": path.replace("\\", "/")})
+
     def current_frame(self) -> int:
         return int(self.request({"cmd": "frame_info"})["current_frame"])

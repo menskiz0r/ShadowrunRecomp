@@ -96,7 +96,7 @@ build\shadowrun_runner.exe "<your ROM>" 3000 frame.bmp
 Both are described in [`docs/SDL-FRONTEND.md`](docs/SDL-FRONTEND.md).
 
 Scripted agents can drive the window over MCP: `tools/genesis-mcp` presses pad
-buttons through the runner's debug command server and is wired up in
+buttons and captures screenshots through the runner's debug command server; see
 [`tools/genesis-mcp/README.md`](tools/genesis-mcp/README.md).
 
 Before building, pin the framework and apply the one patch this game needs:

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import tempfile
 import time
+from pathlib import Path
 from typing import Final
 
-from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver import Image, MCPServer
 
 from debug_link import DebugEndpoint, GenesisDebugLink
 from genesis_pad import button_mask, normalize_button
@@ -63,7 +65,19 @@ def press_button(button: str, duration_ms: int = DEFAULT_DURATION_MS) -> str:
     return f"Pressed {name} for {duration} ms across frames {first_frame}..{last_frame}."
 
 
-@server.tool(description="Return a textual representation of the current game screen.")
+@server.tool(description="Capture the current game screen and return it as a PNG image.")
+def screenshot() -> Image:
+    endpoint = DebugEndpoint.from_environment()
+    with tempfile.TemporaryDirectory(prefix="genesis-mcp-") as directory:
+        capture_path = Path(directory) / "screen.png"
+        with GenesisDebugLink(endpoint) as link:
+            link.screenshot(str(capture_path))
+        if not capture_path.exists():
+            raise RuntimeError("the runner answered the screenshot command but wrote no file")
+        return Image(data=capture_path.read_bytes(), format="png")
+
+
+@server.tool(description="Return a textual description of the current game screen.")
 def read_state() -> str:
     return READ_STATE_PLACEHOLDER
 
