@@ -21,3 +21,4 @@ docs/assets/
 .vscode/
 *.user
 Thumbs.db
+__pycache__/
